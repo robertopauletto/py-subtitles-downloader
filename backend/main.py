@@ -1,4 +1,5 @@
 # main.py
+from configparser import ConfigParser
 from dataclasses import dataclass, field
 import os
 import subprocess
@@ -6,6 +7,12 @@ from typing import List, Union, Tuple
 
 from bs4 import BeautifulSoup, Tag, ResultSet
 import requests
+
+CONFIG_FILENAME = 'config.ini'
+if not os.path.exists(CONFIG_FILENAME):
+    raise EnvironmentError("A 'config.ini' file must be present")
+ini = ConfigParser()
+ini.read(CONFIG_FILENAME)
 
 DOMAIN = 'https://www.opensubtitles.org'
 ROOT_SEARCH = 'https://www.opensubtitles.org/en/search2/' \
@@ -44,13 +51,15 @@ class SubtitledShow(Subtitle):
 
     def build_local_srt_zip_filename(self, extension: str = '.zip'):
         """Compose a filename based on name + episode if available"""
-        ep = f"{self.name.strip()}-{self.episode.strip()}".replace(' ', '-')
-        return ep + extension
+        ep = f"{self.name.strip()}"
+        f"{' - ' if self.episode else ''}"
+        f"{self.episode if self.episode.strip() else ''}"
+        return ep.replace(' ', '_') + extension
 
 
-def _search_show(search_terms: str):
+def _search_show(search_terms: str, search_url):
     """Get the disambiguation page results"""
-    url = ROOT_SEARCH + search_terms.replace(' ', '+')
+    url = search_url + search_terms.replace(' ', '+')
     resp = requests.get(url)
     if not resp.ok:
         resp.raise_for_status()
@@ -84,7 +93,8 @@ def _search_show(search_terms: str):
     return shows_found
 
 
-def _get_subtitle_file(show: SubtitledShow, root_url: str) -> SubtitledShow:
+def _get_subtitle_file(show: SubtitledShow, root_url: str,
+                       srt_file_col_pos: int) -> SubtitledShow:
     url = show.get_url(root_url)
     resp = requests.get(url)
     if not resp.ok:
@@ -111,7 +121,7 @@ def _get_subtitle_file(show: SubtitledShow, root_url: str) -> SubtitledShow:
             show.srt_files.append(
                 SubtitleSrtFile(
                     name=title,
-                    href=_parse_srt_file_url(cells[SUBTITLE_FILE_COLUMN]))
+                    href=_parse_srt_file_url(cells[srt_file_col_pos]))
             )
             # print("Show: " + title)
             # print("Srt file: " + _parse_srt_file_url(cells[SUBTITLE_FILE_COLUMN]))
@@ -173,7 +183,9 @@ def cli():
     # 1) Get user input
     search_terms = input("Show to search: ")
     # 2) Parse search page to find possible matches
-    shows: List[SubtitledShow] = _search_show(search_terms)
+    shows: List[SubtitledShow] = _search_show(search_terms,
+                                              ini.get('parser',
+                                                      'OST_SEARCH_URL'))
     if not shows:
         print("No shows found")
     while True:
@@ -189,7 +201,10 @@ def cli():
             break
         subprocess.call('clear')
         # 4) Find subtitles for the show chosen by the user
-        upd_show = _get_subtitle_file(shows[code], DOMAIN)
+        upd_show = _get_subtitle_file(shows[code],
+                                      ini.get('parser', 'OST_DOMAIN'),
+                                      ini.getint('parser',
+                                                 'OST_SUBTITLE_FILE_COLUMN'))
         for i, srtfile in enumerate(upd_show.srt_files):
             print(f"{i + 1} - {srtfile.name}")
         print(f"0 - Quit")
@@ -202,11 +217,12 @@ def cli():
         subprocess.call('clear')
         srturl = upd_show.srt_files[code].href
         if not srturl.startswith('http'):
-            srturl = upd_show.srt_files[code].get_url(DOMAIN)
+            srturl = upd_show.srt_files[code].get_url(
+                ini.get('parser', 'OST_DOMAIN'))
         # 6) Retrieve and lacally save the file .zip containing the .srt file
         filename = upd_show.build_local_srt_zip_filename()
         filesize = _download_srt_file(srturl, local_filename=filename)
-        print(f"Retrieved {fileaname} ({filesize}) bytes")
+        print(f"Retrieved {filename} ({filesize}) bytes")
         message = f"File srt downloaded"
         break
 
