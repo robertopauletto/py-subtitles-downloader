@@ -1,0 +1,10 @@
+venv/
+.venv/
+.env
+
+.idea/
+
+__pycache__/
+
+*.srt
+*.zip
