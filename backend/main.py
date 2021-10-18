@@ -4,7 +4,7 @@ from configparser import ConfigParser
 from dataclasses import dataclass, field
 import os
 import subprocess
-from typing import List, Union, Tuple
+from typing import List, Union, Tuple, Any
 
 from bs4 import BeautifulSoup, Tag, ResultSet
 import requests
@@ -14,12 +14,6 @@ if not os.path.exists(CONFIG_FILENAME):
     raise EnvironmentError("Cnfig file 'config.ini' is missing")
 ini = ConfigParser()
 ini.read(CONFIG_FILENAME)
-
-# DOMAIN = 'https://www.opensubtitles.org'
-# ROOT_SEARCH = 'https://www.opensubtitles.org/en/search2/' \
-#             'sublanguageid-eng/moviename-'
-
-# SUBTITLE_FILE_COLUMN = 4
 
 
 @dataclass
@@ -31,6 +25,10 @@ class Subtitle:
     def get_url(self, domain):
         """Return an url appending `self.href` to the `domain` part"""
         return f"{domain}{self.href}"
+
+    @staticmethod
+    def parse(**kwargs) -> Any:
+        return NotImplementedError
 
 
 @dataclass
@@ -54,78 +52,108 @@ class SubtitledShow(Subtitle):
         """Compose a filename based on name + episode if available"""
         temp = f"{self.name.strip()}-{self.episode.strip()}"
         ep = "".join([c for c in temp if c.isalpha()
-                    or c.isdigit() or c == ' ']).rstrip()
+                      or c.isdigit() or c == ' ']).rstrip()
         return ep + extension
 
+    @staticmethod
+    def parse(col: Tag) -> Union["SubtitledShow", None]:
+        """Parse element and return an instance of the class"""
+        show_cell: Tag = col.find('strong')
+        show_url = show_cell.find('a', attrs={"class": "bnone"})
+        if not show_url:
+            return None
+        show_href = show_url.attrs['href']
+        show_name = show_url.text.strip().replace('\n', ' ')
+        show_episode = \
+            show_cell.next_sibling.text.strip().replace('\n', ' ')
+        return SubtitledShow(href=show_href, name=show_name,
+                             episode=show_episode, srt_files=[])
 
-def _search_show(search_terms: str, root_search: str):
-    """Get the disambiguation page results"""
-    url = root_search + search_terms.replace(' ', '+')
+
+def _get_html(url: str) -> BeautifulSoup:
+    """Read from `url` and return an object for parsing"""
     resp = requests.get(url)
     if not resp.ok:
         resp.raise_for_status()
-    soup: BeautifulSoup = BeautifulSoup(resp.text, 'html.parser')
-    results_table: Tag = soup.find('table', {'id': 'search_results'})
-    if not results_table:
-        raise ValueError("Unable to parse search results")
+    return BeautifulSoup(resp.text, 'html.parser')
+
+
+def _parse_show_disambiguation(results_table: Tag) -> List[Subtitle]:
+    """Parse and return the possible shows found in the results table"""
     rows: ResultSet = results_table.find_all('tr')
     shows_found = []
-    for i, row in enumerate(rows):
+    for row in rows:
         if 'id' not in row.attrs or not row.attrs['id'].startswith('name'):
             continue
-
         cols: ResultSet = row.find_all('td')
         for col in cols:
             if 'id' not in col.attrs or not col.attrs['id'].startswith('main'):
                 continue
-            show_cell: Tag = col.find('strong')
-            show_url = show_cell.find('a', attrs={"class": "bnone"})
-            if show_url:
-                item_row = i + 1
-                show_href = show_url.attrs['href']
-                show_name = show_url.text.strip().replace('\n', ' ')
-                show_episode = \
-                    show_cell.next_sibling.text.strip().replace('\n', ' ')
-                shows_found.append(
-                    SubtitledShow(href=show_href, name=show_name, 
-                    episode=show_episode, srt_files=[]))
+            show = SubtitledShow.parse(col=col)
+            if not show:
+                print(f"Failed parsing of {row.text}")
+                continue
+            shows_found.append(show)
+    return shows_found
+
+
+def _search_show(search_terms: str, root_search: str):
+    """Get the disambiguation page results"""
+    soup: BeautifulSoup = _get_html(
+        root_search + search_terms.replace(' ', '+'))
+    results_table: Tag = soup.find('table', {'id': 'search_results'})
+    if not results_table:
+        raise ValueError("Unable to parse search results")
+    shows_found = _parse_show_disambiguation(results_table)
+    # rows: ResultSet = results_table.find_all('tr')
+    # shows_found = []
+    # for i, row in enumerate(rows):
+    #     if 'id' not in row.attrs or not row.attrs['id'].startswith('name'):
+    #         continue
+    #
+    #     cols: ResultSet = row.find_all('td')
+    #     for col in cols:
+    #         if 'id' not in col.attrs or not col.attrs['id'].startswith('main'):
+    #             continue
+    #         show_cell: Tag = col.find('strong')
+    #         show_url = show_cell.find('a', attrs={"class": "bnone"})
+    #         if show_url:
+    #             item_row = i + 1
+    #             show_href = show_url.attrs['href']
+    #             show_name = show_url.text.strip().replace('\n', ' ')
+    #             show_episode = \
+    #                 show_cell.next_sibling.text.strip().replace('\n', ' ')
+    #             shows_found.append(
+    #                 SubtitledShow(href=show_href, name=show_name,
+    #                               episode=show_episode, srt_files=[]))
     # for show in shows_found:
     #     print(f"{show.name} / {show.episode}\n{show.href}")
     return shows_found
 
 
-def _get_subtitle_file(show: SubtitledShow, root_url: str, srtfile_col_index: int) -> SubtitledShow:
-    url = show.get_url(root_url)
-    resp = requests.get(url)
-    if not resp.ok:
-        resp.raise_for_status()
-    soup: BeautifulSoup = BeautifulSoup(resp.text, 'html.parser')
+def _get_subtitle_for_show(show_url: str,
+                           srtfile_col_index: int) -> List[SubtitleSrtFile]:
+    """Parse subtitle files available for `show`"""
+    soup: BeautifulSoup = _get_html(show_url)
     results_table: Tag = soup.find('table', {'id': 'search_results'})
+    retval = []
     if not results_table:
-        # raise ValueError("Unable to parse search results")
         itemscope = soup.find("div", {"itemtype": "http://schema.org/Movie"})
         onefile: Tag = itemscope.find('a', {'itemprop': "url"})
-        show.srt_files.append(
-            SubtitleSrtFile(
-                name=onefile.text.strip().replace('\n', ' '),
-                href=onefile.attrs['href'])
-        )
+        reval.append(SubtitleSrtFile(
+            name=onefile.text.strip().replace('\n', ' '),
+            href=onefile.attrs['href']))
     else:
         rows: ResultSet = results_table.find_all('tr')
         for row in rows:
             if 'id' not in row.attrs or not row.attrs['id'].startswith('name'):
                 continue
             cells = row.find_all('td')
-            # itle = cells[0].text.split('\n')
             title = _parse_title(cells[0])
-            show.srt_files.append(
-                SubtitleSrtFile(
-                    name=title,
-                    href=_parse_srt_file_url(cells[srtfile_col_index]))
-            )
-            # print("Show: " + title)
-            # print("Srt file: " + _parse_srt_file_url(cells[SUBTITLE_FILE_COLUMN]))
-    return show
+            retval.append(SubtitleSrtFile(name=title,
+                                          href=_parse_srt_file_url(
+                                              cells[srtfile_col_index])))
+    return retval
 
 
 def _parse_title(tag: Tag) -> str:
@@ -181,17 +209,16 @@ def cli():
 
     # 1) Get user input
     search_terms = input("Show to search: ")
-    
+
     # 2) Parse search page to find possible matches
-    shows: List[SubtitledShow] = _search_show(
+    shows: List[Subtitled] = _search_show(
         search_terms, ini.get('parser', 'OST_SEARCH_URL'))
-    
     if not shows:
         print("No shows found")
+
+    # 3) Ask user which show to process
     while True:
         subprocess.call('clear')
-        
-        # 3) Ask user which show to process
         for i, show in enumerate(shows):
             print(f"{i + 1} - {str(show)}")
         print(f"0 - Quit")
@@ -201,15 +228,18 @@ def cli():
             message = msg
             break
         subprocess.call('clear')
-        
+
         # 4) Find subtitles for the show chosen by the user
-        upd_show = _get_subtitle_file(
-            shows[code], ini.get('parser', 'OST_DOMAIN'), 
-            ini.getint('parser', 'OST_SUBTITLE_FILE_COLUMN'))
+        upd_show = shows[code]
+        show_url = upd_show.get_url(ini.get('parser', 'OST_DOMAIN'))
+        upd_show.srt_files = (
+            _get_subtitle_for_show(show_url,
+                                   ini.getint('parser',
+                                              'OST_SUBTITLE_FILE_COLUMN')))
         for i, srtfile in enumerate(upd_show.srt_files):
             print(f"{i + 1} - {srtfile.name}")
         print(f"0 - Quit")
-        
+
         # 5) Ask user which subtitle file to retrieve
         choice = input("Get subtitle file number ")
         code, msg = _check_choice(choice, len(upd_show.srt_files))
@@ -221,7 +251,7 @@ def cli():
         if not srturl.startswith('http'):
             srturl = upd_show.srt_files[code].get_url(
                 ini.get('parser', 'OST_DOMAIN'))
-        
+
         # 6) Retrieve and lacally save the file .zip containing the .srt file
         filename = os.path.join(ini.get('paths', 'OST_DL_FOLDER'),
                                 upd_show.build_local_srt_zip_filename())
