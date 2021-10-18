@@ -9,12 +9,6 @@ from typing import List, Union, Tuple, Any
 from bs4 import BeautifulSoup, Tag, ResultSet
 import requests
 
-CONFIG_FILENAME = 'config.ini'
-if not os.path.exists(CONFIG_FILENAME):
-    raise EnvironmentError("Cnfig file 'config.ini' is missing")
-ini = ConfigParser()
-ini.read(CONFIG_FILENAME)
-
 
 @dataclass
 class Subtitle:
@@ -97,7 +91,7 @@ def _parse_show_disambiguation(results_table: Tag) -> List[Subtitle]:
     return shows_found
 
 
-def _search_show(search_terms: str, root_search: str):
+def search_show(search_terms: str, root_search: str):
     """Get the disambiguation page results"""
     soup: BeautifulSoup = _get_html(
         root_search + search_terms.replace(' ', '+'))
@@ -106,6 +100,11 @@ def _search_show(search_terms: str, root_search: str):
         raise ValueError("Unable to parse search results")
     shows_found = _parse_show_disambiguation(results_table)
     return shows_found
+
+
+def get_subtitles_for_show(show_url: str,
+                           srtfile_col_index: int) -> List[SubtitleSrtFile]:
+    return _get_subtitle_for_show(show_url, srtfile_col_index)
 
 
 def _get_subtitle_for_show(show_url: str,
@@ -188,7 +187,7 @@ def cli():
     search_terms = input("Show to search: ")
 
     # 2) Parse search page to find possible matches
-    shows: List[Subtitled] = _search_show(
+    shows: List[Subtitled] = search_show(
         search_terms, ini.get('parser', 'OST_SEARCH_URL'))
     if not shows:
         print("No shows found")
@@ -241,4 +240,9 @@ def cli():
 
 
 if __name__ == '__main__':
+    CONFIG_FILENAME = 'config.ini'
+    if not os.path.exists(CONFIG_FILENAME):
+        raise EnvironmentError("Cnfig file 'config.ini' is missing")
+    ini = ConfigParser()
+    ini.read(CONFIG_FILENAME)
     cli()
