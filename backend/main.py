@@ -105,29 +105,6 @@ def _search_show(search_terms: str, root_search: str):
     if not results_table:
         raise ValueError("Unable to parse search results")
     shows_found = _parse_show_disambiguation(results_table)
-    # rows: ResultSet = results_table.find_all('tr')
-    # shows_found = []
-    # for i, row in enumerate(rows):
-    #     if 'id' not in row.attrs or not row.attrs['id'].startswith('name'):
-    #         continue
-    #
-    #     cols: ResultSet = row.find_all('td')
-    #     for col in cols:
-    #         if 'id' not in col.attrs or not col.attrs['id'].startswith('main'):
-    #             continue
-    #         show_cell: Tag = col.find('strong')
-    #         show_url = show_cell.find('a', attrs={"class": "bnone"})
-    #         if show_url:
-    #             item_row = i + 1
-    #             show_href = show_url.attrs['href']
-    #             show_name = show_url.text.strip().replace('\n', ' ')
-    #             show_episode = \
-    #                 show_cell.next_sibling.text.strip().replace('\n', ' ')
-    #             shows_found.append(
-    #                 SubtitledShow(href=show_href, name=show_name,
-    #                               episode=show_episode, srt_files=[]))
-    # for show in shows_found:
-    #     print(f"{show.name} / {show.episode}\n{show.href}")
     return shows_found
 
 
