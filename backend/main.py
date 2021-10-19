@@ -43,7 +43,10 @@ class SubtitledShow(Subtitle):
         return f"{self.name} {'- ' + self.episode if self.episode else ''}"
 
     def build_local_srt_zip_filename(self, extension: str = '.zip'):
-        """Compose a filename based on name + episode if available"""
+        """
+        Compose a valid local filename based on name + episode
+        if available
+        """
         temp = f"{self.name.strip()}-{self.episode.strip()}"
         ep = "".join([c for c in temp if c.isalpha()
                       or c.isdigit() or c == ' ']).rstrip()
@@ -51,7 +54,7 @@ class SubtitledShow(Subtitle):
 
     @staticmethod
     def parse(col: Tag) -> Union["SubtitledShow", None]:
-        """Parse element and return an instance of the class"""
+        """Parse `col` and return an instance of the class"""
         show_cell: Tag = col.find('strong')
         show_url = show_cell.find('a', attrs={"class": "bnone"})
         if not show_url:
@@ -93,8 +96,9 @@ def _parse_show_disambiguation(results_table: Tag) -> List[Subtitle]:
 
 def search_show(search_terms: str, root_search: str):
     """Get the disambiguation page results"""
-    soup: BeautifulSoup = _get_html(
-        root_search + search_terms.replace(' ', '+'))
+    url = root_search + search_terms.replace(' ', '+')
+    print("Searching " + url)
+    soup: BeautifulSoup = _get_html(url)
     results_table: Tag = soup.find('table', {'id': 'search_results'})
     if not results_table:
         raise ValueError("Unable to parse search results")
@@ -103,11 +107,6 @@ def search_show(search_terms: str, root_search: str):
 
 
 def get_subtitles_for_show(show_url: str,
-                           srtfile_col_index: int) -> List[SubtitleSrtFile]:
-    return _get_subtitle_for_show(show_url, srtfile_col_index)
-
-
-def _get_subtitle_for_show(show_url: str,
                            srtfile_col_index: int) -> List[SubtitleSrtFile]:
     """Parse subtitle files available for `show`"""
     soup: BeautifulSoup = _get_html(show_url)
@@ -144,7 +143,7 @@ def _parse_srt_file_url(tag: Tag) -> str:
     return href.attrs['href']
 
 
-def _download_srt_file(url: str, local_filename: str) -> int:
+def download_srt_files(url: str, local_filename: str) -> int:
     """
     Download the subtitle file (.zip)
     :param url:
@@ -165,84 +164,3 @@ def _download_srt_file(url: str, local_filename: str) -> int:
     if os.path.exists(local_filename):
         return os.path.getsize(local_filename)
     return -1
-
-
-def _check_choice(choice: str, max_id: int) -> Tuple[int, str]:
-    if not choice:
-        return -1, "Empty choice"
-    if not choice.strip().isdigit():
-        return -1, "Invalid choice, must be a number"
-    if int(choice) == 0:
-        return -1, "Program terminated by user"
-    if int(choice) > max_id:
-        return -1, f"Invalid choice, must be between 1 and {max_id}"
-    return int(choice) - 1, ""
-
-
-def cli():
-    """A rudimentary cli interface, just to use the app for the moment"""
-    message = ""
-
-    # 1) Get user input
-    search_terms = input("Show to search: ")
-
-    # 2) Parse search page to find possible matches
-    shows: List[Subtitled] = search_show(
-        search_terms, ini.get('parser', 'OST_SEARCH_URL'))
-    if not shows:
-        print("No shows found")
-
-    # 3) Ask user which show to process
-    while True:
-        subprocess.call('clear')
-        for i, show in enumerate(shows):
-            print(f"{i + 1} - {str(show)}")
-        print(f"0 - Quit")
-        choice = input("Find subtitles for show number ")
-        code, msg = _check_choice(choice, len(shows))
-        if code < 0:
-            message = msg
-            break
-        subprocess.call('clear')
-
-        # 4) Find subtitles for the show chosen by the user
-        upd_show = shows[code]
-        show_url = upd_show.get_url(ini.get('parser', 'OST_DOMAIN'))
-        upd_show.srt_files = (
-            _get_subtitle_for_show(show_url,
-                                   ini.getint('parser',
-                                              'OST_SUBTITLE_FILE_COLUMN')))
-        for i, srtfile in enumerate(upd_show.srt_files):
-            print(f"{i + 1} - {srtfile.name}")
-        print(f"0 - Quit")
-
-        # 5) Ask user which subtitle file to retrieve
-        choice = input("Get subtitle file number ")
-        code, msg = _check_choice(choice, len(upd_show.srt_files))
-        if code < 0:
-            message = msg
-            break
-        subprocess.call('clear')
-        srturl = upd_show.srt_files[code].href
-        if not srturl.startswith('http'):
-            srturl = upd_show.srt_files[code].get_url(
-                ini.get('parser', 'OST_DOMAIN'))
-
-        # 6) Retrieve and lacally save the file .zip containing the .srt file
-        filename = os.path.join(ini.get('paths', 'OST_DL_FOLDER'),
-                                upd_show.build_local_srt_zip_filename())
-        filesize = _download_srt_file(url=srturl, local_filename=filename)
-        print(f"Retrieved {filename} ({filesize}) bytes")
-        message = f"File srt downloaded"
-        break
-
-    print(message)
-
-
-if __name__ == '__main__':
-    CONFIG_FILENAME = 'config.ini'
-    if not os.path.exists(CONFIG_FILENAME):
-        raise EnvironmentError("Cnfig file 'config.ini' is missing")
-    ini = ConfigParser()
-    ini.read(CONFIG_FILENAME)
-    cli()
