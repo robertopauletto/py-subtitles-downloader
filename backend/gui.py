@@ -7,7 +7,8 @@ from typing import Union, Tuple
 
 import PySimpleGUI as sg
 
-import backend.main as ost
+import main as ost
+import gui_settings as guiconf
 
 CONFIG_FILENAME = 'config.ini'
 if not os.path.exists(CONFIG_FILENAME):
@@ -16,6 +17,20 @@ ini = ConfigParser()
 ini.read(CONFIG_FILENAME)
 
 sg.ChangeLookAndFeel(ini.get('gui', 'LOOKNFEEL'))
+
+
+def _change_settings(sg_keyvalues: dict, inifile: str) -> list:
+    """Modify configuration setting"""
+    changes = []
+    for sgkey, value in sg_keyvalues.items():
+        section, key = sgkey.split('#')
+        if ini.get(section, key) == value:
+            continue
+        changes.append(f"{section} -> {key} modified: {value}")
+        ini.set(section, key, value)
+    with open(inifile, 'w') as fh:
+        ini.write(fh)
+    return changes
 
 
 def _get_def_folder():
@@ -48,7 +63,7 @@ layout = [
         sg.Button("GET SHOW", key="-SELSHOW-", disabled=True),
         sg.Button("GET SUBTITLES", key="-GETSUBT-", disabled=True),
         sg.Button("CONFIGURE", key="-CONFIG-"),
-        sg.Cancel('QUIT', key="-CANCEL-")
+        sg.Cancel("QUIT", key="-CANCEL-")
     ]  # last row
 ]
 
@@ -139,7 +154,7 @@ def _get_remote_and_local_subtitles_filenames(
 
 def on_btn_get_subtitles(window, event, values,
                          selected_show: ost.SubtitledShow) -> None:
-    """Download the subtitle file chosem"""
+    """Download the subtitle file chosen"""
     window['-SELSHOW-'].update(disabled=True)
     print(selected_show)
     if not values['-OUTLIST-']:
@@ -166,7 +181,28 @@ def _open_folder_upon_choice(filename: str, filesize: int, folder: str) -> None:
     choice = sg.popup_ok_cancel(prompt, title="")
     if choice.lower() == 'ok':
         folder = os.path.abspath(folder)
+        # TODO: Only unix-like supported, make it valid for Windows SO too
         subprocess.call(["xdg-open", folder])
+
+
+def config_settings_loop():
+    gui_window = guiconf.create_setttings_window(ini)
+    while True:
+        gui_event, gui_values = gui_window.read()
+        if gui_event in (sg.WIN_CLOSED, '-CANCEL-') \
+                or gui_event in '-GUICONFCLOSE-':
+            gui_window.close()
+            break
+        elif gui_event in '-GUICONFSAVE-':
+            prompt = "OK to confirm configuration changes?"
+            choice = sg.popup_ok_cancel(prompt, title='Settings',
+                                        keep_on_top=True)
+            if choice.lower() == 'ok':
+                changes = _change_settings(gui_values, CONFIG_FILENAME)
+                prompt = "Settings update completed, you may need to restart"\
+                         " the application to apply changes"
+
+                sg.popup_ok(prompt, title='Settings', keep_on_top=True)
 
 
 def mainloop(layout: list) -> None:
@@ -202,8 +238,7 @@ def mainloop(layout: list) -> None:
         elif event in '-GETSUBT-':
             on_btn_get_subtitles(window, event, values, selected_show)
         elif event in '-CONFIG-':
-            sg.popup_get_text('popup!')
-
+            config_settings_loop()
     window.close()
 
 
