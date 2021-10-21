@@ -1,13 +1,14 @@
 # main.py
 
-from configparser import ConfigParser
-from dataclasses import dataclass, field
 import os
-import subprocess
-from typing import List, Union, Tuple, Any
+from dataclasses import dataclass, field
+from typing import List, Union, Any
 
-from bs4 import BeautifulSoup, Tag, ResultSet
 import requests
+from bs4 import BeautifulSoup, Tag, ResultSet
+
+SRTFILE_COL_EP_INDEX = 4
+SRTFILE_COL_SEASON_INDEX = 2
 
 
 @dataclass
@@ -19,6 +20,9 @@ class Subtitle:
     def get_url(self, domain):
         """Return an url appending `self.href` to the `domain` part"""
         return f"{domain}{self.href}"
+
+    def to_json(self) -> dict:
+        return {"name": self.name, href: "self.href"}
 
     @staticmethod
     def parse(**kwargs) -> Any:
@@ -36,6 +40,11 @@ class SubtitledShow(Subtitle):
     """Represent a show to search for subtitles"""
     episode: str = ""
     srt_files: List[SubtitleSrtFile] = field(default_factory=[])
+
+    def to_json(self) -> dict:
+        retval = super().to_json()
+        retval['srtfiles'] = [srt.to_json() for srt in self.srt_files]
+        return retval
 
     def __str__(self):
         """The user need to know show name and episode (if any) in order to
@@ -106,34 +115,78 @@ def search_show(search_terms: str, root_search: str):
     return shows_found
 
 
-def get_subtitles_for_show(show_url: str,
-                           srtfile_col_index: int) -> List[SubtitleSrtFile]:
+def get_subtitles_for_show(show_url: str) -> List[SubtitleSrtFile]:
     """Parse subtitle files available for `show`"""
+    srtfile_col_ep_index = SRTFILE_COL_EP_INDEX
+    srtfile_col_season_index = SRTFILE_COL_SEASON_INDEX
     soup: BeautifulSoup = _get_html(show_url)
     results_table: Tag = soup.find('table', {'id': 'search_results'})
     retval = []
-    if not results_table:
+    if not results_table:  # Movies or TV Episodes
         itemscope = soup.find("div", {"itemtype": "http://schema.org/Movie"})
         onefile: Tag = itemscope.find('a', {'itemprop': "url"})
         reval.append(SubtitleSrtFile(
             name=onefile.text.strip().replace('\n', ' '),
             href=onefile.attrs['href']))
-    else:
-        rows: ResultSet = results_table.find_all('tr')
-        for row in rows:
-            if 'id' not in row.attrs or not row.attrs['id'].startswith('name'):
-                continue
-            cells = row.find_all('td')
-            title = _parse_title(cells[0])
-            retval.append(SubtitleSrtFile(name=title,
-                                          href=_parse_srt_file_url(
-                                              cells[srtfile_col_index])))
+    else:  # Complete TV Series season or TV Episodes with 1 subtitles file
+        if 'itemprop' in results_table.attrs \
+                and results_table.attrs['itemprop'] == 'season':
+            srts = _parse_complete_tvseries(results_table,
+                                            srtfile_col_season_index)
+            retval.extend(srts)
+        else:  # Single srt file
+            rows: ResultSet = results_table.find_all('tr')
+            for row in rows:
+                if 'id' not in row.attrs or not row.attrs['id'].startswith(
+                        'name'):
+                    continue
+                cells = row.find_all('td')
+                title = _parse_title(cells[0])
+                retval.append(
+                    SubtitleSrtFile(name=title,
+                                    href=_parse_srt_file_url(
+                                        cells[srtfile_col_ep_index]))
+                )
     return retval
 
 
+def _parse_complete_tvseries(
+        results_table: Tag, srtfile_col_season_index) -> List[SubtitleSrtFile]:
+    """Parse subtitles links for a TvSeries page (collection of episodes) """
+    retval = []
+    rows = results_table.find_all('tr')
+    for row in rows:
+        cells = row.find_all('td')
+        if not cells:
+            continue
+        if len(cells) == 1 \
+                and cells[0].text.strip().lower().startswith('season'):
+            title = cells[0].text.strip()
+            links = cells[0].find_all('a')
+            href = None
+            for link in links:
+                # Trying to retrieve the number of episodes in the season
+                if 'itemprop' in link.attrs:
+                    if not link.find('meta'):
+                        continue
+                    title = f"{title} ("\
+                            f"{link.find('meta').attrs['content']} episodes)"
+                else:
+                    href = link.attrs['href']
+            retval.append(SubtitleSrtFile(name=title, href=href))
+        else:
+            title = _parse_title(cells[0])
+            retval.append(SubtitleSrtFile(
+                name=title,
+                href=_parse_srt_file_url(
+                    cells[srtfile_col_season_index])))
+    return retval
+
 def _parse_title(tag: Tag) -> str:
     text = tag.text.strip().replace('\n', ' ')
-    return text[0:text.lower().index('watch')]
+    if 'watch' in text.lower():
+        return text[0:text.lower().index('watch')]
+    return text
 
 
 def _parse_srt_file_url(tag: Tag) -> str:

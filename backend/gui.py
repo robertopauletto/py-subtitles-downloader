@@ -38,26 +38,26 @@ def _get_def_folder():
 
 
 layout = [
-    # row 1
+    # row 1 - search
     [
         sg.Text("Enter show to search", size=(20, 1)),
         sg.InputText(key="-SEARCHTERMS-")
     ],
-    # row 2
+    # row 2 - download folder
     [
         sg.Text("Download directory", size=(20, 1)),
         sg.Input(key="-DLFOLDER-", default_text=_get_def_folder(),
                  readonly=True),
         sg.FolderBrowse(tooltip='Directory to put downloaded srt files')
     ],
-    # row 3
+    # row 3 - output
     [
         [sg.HSeparator()],  # row 3
         [sg.Text("", size=(80, 1), key='-LISTTITLE-')],
         [sg.Listbox(values=[], size=(80, 6), key="-OUTLIST-")],
         [sg.HSeparator()],
     ],
-    # row 4
+    # row 5 - Commands
     [
         sg.OK("SEARCH", key="-SEARCH-"),
         sg.Button("GET SHOW", key="-SELSHOW-", disabled=True),
@@ -87,18 +87,22 @@ def _enumerate_items(items: list, start: int = 1, idx_sep: str = ' - ') -> list:
 
 
 def on_btn_search(window, event, values) -> list:
-    print("Search button pressed!")
-    window['-GETSUBT-'].update(disabled=True)
-    window['-SELSHOW-'].update(disabled=True)
-    shows = ost.search_show(values['-SEARCHTERMS-'],
-                            ini.get('parser', 'OST_SEARCH_URL'))
-    window['-LISTTITLE-'].update('Shows matching the query string, please '
-                                 'select one in order to download the '
-                                 'subtitle file')
-    numbered_shows = _enumerate_items([str(show) for show in shows])
-    window['-OUTLIST-'].update(values=numbered_shows)
-    window['-SELSHOW-'].update(disabled=False)
-    return shows
+    try:
+        print("Search button pressed!")
+        window['-GETSUBT-'].update(disabled=True)
+        window['-SELSHOW-'].update(disabled=True)
+        shows = ost.search_show(values['-SEARCHTERMS-'],
+                                ini.get('parser', 'OST_SEARCH_URL'))
+        window['-LISTTITLE-'].update('Shows matching the query string, please '
+                                     'select one in order to download the '
+                                     'subtitle file')
+        numbered_shows = _enumerate_items([str(show) for show in shows])
+        window['-OUTLIST-'].update(values=numbered_shows)
+        window['-SELSHOW-'].update(disabled=False)
+        return shows
+    except Exception as ex:
+        prompt = f"An error occurred:{ex} "
+        sg.popup_error(prompt, title="")
 
 
 def _get_idx_from_selected(item,
@@ -115,27 +119,31 @@ def on_btn_select_show(window, event, values, shows) -> ost.SubtitledShow:
     For the selected show will be retrieved info about the subtitle files
     associated with
     """
-    print(values['-OUTLIST-'])
-    if not values['-OUTLIST-']:
-        sg.popup('Please select the show in order to download the subtitles')
-    else:
-        # Parse the index of the selected show related to the list "shows"
-        idx = _get_idx_from_selected(values['-OUTLIST-'][0])
-        selected_show = shows[idx]
+    try:
+        print(values['-OUTLIST-'])
+        if not values['-OUTLIST-']:
+            sg.popup('Please select the show in order to download the subtitles')
+        else:
+            # Parse the index of the selected show related to the list "shows"
+            idx = _get_idx_from_selected(values['-OUTLIST-'][0])
+            selected_show = shows[idx]
 
-        # For the selected show retrieve the subtitle files
-        show_url = selected_show.get_url(ini.get('parser', 'OST_DOMAIN'))
-        srtfiles = ost.get_subtitles_for_show(show_url, 4)
-        # Pass sutitles files to the selected show object
-        selected_show.srt_files = srtfiles
-        numbered_srtfiles = _enumerate_items([srt.name for srt in srtfiles])
-        window['-LISTTITLE-'].update('Subtitle files found for the show, '
-                                     'please pick one to download')
-        window['-OUTLIST-'].update(values=numbered_srtfiles)
-        window['-GETSUBT-'].update(disabled=False)
-        # Return the selected show, we need this for the subsequential
-        # retrieving of the subtitle file
-        return selected_show
+            # For the selected show retrieve the subtitle files
+            show_url = selected_show.get_url(ini.get('parser', 'OST_DOMAIN'))
+            srtfiles = ost.get_subtitles_for_show(show_url)
+            # Pass sutitles files to the selected show object
+            selected_show.srt_files = srtfiles
+            numbered_srtfiles = _enumerate_items([srt.name for srt in srtfiles])
+            window['-LISTTITLE-'].update('Subtitle files found for the show, '
+                                         'please pick one to download')
+            window['-OUTLIST-'].update(values=numbered_srtfiles)
+            window['-GETSUBT-'].update(disabled=False)
+            # Return the selected show, we need this for the subsequential
+            # retrieving of the subtitle file
+            return selected_show
+    except Exception as ex:
+        prompt = f"An error occurred:{ex} "
+        sg.popup_error(prompt, title="")
 
 
 def _get_remote_and_local_subtitles_filenames(
@@ -155,23 +163,27 @@ def _get_remote_and_local_subtitles_filenames(
 def on_btn_get_subtitles(window, event, values,
                          selected_show: ost.SubtitledShow) -> None:
     """Download the subtitle file chosen"""
-    window['-SELSHOW-'].update(disabled=True)
-    print(selected_show)
-    if not values['-OUTLIST-']:
-        sg.popup('Please select a subtitles file to download')
-    else:
-        idx = _get_idx_from_selected(values['-OUTLIST-'][0])
-        srturl, filename = _get_remote_and_local_subtitles_filenames(
-            values['-DLFOLDER-'], selected_show, idx)
-        print("Downloading " + srturl)
-        filesize = ost.download_srt_files(url=srturl, local_filename=filename)
-        print(f"Create file {filename} ({filesize} bytes)")
-        if filesize < 0:
-            sg.popup_error("Srt file download",
-                           "Un error has occurred, unable to download the "
-                           "selected file")
+    try:
+        window['-SELSHOW-'].update(disabled=True)
+        print(selected_show)
+        if not values['-OUTLIST-']:
+            sg.popup('Please select a subtitles file to download')
         else:
-            _open_folder_upon_choice(filename, filesize, values['-DLFOLDER-'])
+            idx = _get_idx_from_selected(values['-OUTLIST-'][0])
+            srturl, filename = _get_remote_and_local_subtitles_filenames(
+                values['-DLFOLDER-'], selected_show, idx)
+            print("Downloading " + srturl)
+            filesize = ost.download_srt_files(url=srturl, local_filename=filename)
+            print(f"Create file {filename} ({filesize} bytes)")
+            if filesize < 0:
+                sg.popup_error("Srt file download",
+                               "Un error has occurred, unable to download the "
+                               "selected file")
+            else:
+                _open_folder_upon_choice(filename, filesize, values['-DLFOLDER-'])
+    except Exception as ex:
+        prompt = f"An error occurred:{ex} "
+        sg.popup_error(prompt, title="")
 
 
 def _open_folder_upon_choice(filename: str, filesize: int, folder: str) -> None:
