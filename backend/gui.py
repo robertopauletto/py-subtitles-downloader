@@ -1,20 +1,24 @@
 # gui.py
 
 import os
-from configparser import ConfigParser
 import subprocess
+from configparser import ConfigParser
 from typing import Union, Tuple
 
 import PySimpleGUI as sg
 
-import main as ost
 import gui_settings as guiconf
+import gui_utils as gutils
+import main as ost
 
 CONFIG_FILENAME = 'config.ini'
 if not os.path.exists(CONFIG_FILENAME):
     raise EnvironmentError("Cnfig file 'config.ini' is missing")
 ini = ConfigParser()
 ini.read(CONFIG_FILENAME)
+
+INFO_BTN_FILENAME = os.path.abspath('info_btn16x16.png')
+APPLOGO_FILENAME = os.path.abspath('applogo.png')
 
 sg.ChangeLookAndFeel(ini.get('gui', 'LOOKNFEEL'))
 
@@ -41,21 +45,48 @@ layout = [
     # row 1 - search
     [
         sg.Text("Enter show to search", size=(20, 1)),
-        sg.InputText(key="-SEARCHTERMS-")
+        sg.InputText(key="-SEARCHTERMS-"),
+        sg.Button(
+            '',
+            tooltip='Tips for searching',
+            image_data=gutils.convert_to_base64(INFO_BTN_FILENAME),
+            button_color=(sg.theme_background_color(),
+                          sg.theme_background_color()),
+            border_width=0, key='-SRCTERMSINFO-'
+        )
+
     ],
     # row 2 - download folder
     [
-        sg.Text("Download directory", size=(20, 1)),
+        sg.Text("Download folder", size=(20, 1)),
         sg.Input(key="-DLFOLDER-", default_text=_get_def_folder(),
                  readonly=True),
-        sg.FolderBrowse(tooltip='Directory to put downloaded srt files')
+        sg.FolderBrowse(tooltip='Folder to save downloaded srt files')
     ],
     # row 3 - output
     [
         [sg.HSeparator()],  # row 3
-        [sg.Text("", size=(80, 1), key='-LISTTITLE-')],
-        [sg.Listbox(values=[], size=(80, 6), key="-OUTLIST-")],
+        [
+            sg.Listbox(
+                values=[],
+                size=(80, 6),
+                key="-OUTLIST-",
+                horizontal_scroll=True,
+            ),
+        ],
+        [sg.Text("Enter text to search, then hit the 'SEARCH BUTTON'",
+                 size=(80, 1), key='-LISTTITLE-')],
         [sg.HSeparator()],
+    ],
+    # row 5 - Options
+    [
+        sg.Checkbox(
+            "Extract srl file after download",
+            default=ini.getboolean('gui', 'extract_srt'),
+            tooltip="When selected extract the subtitles file(s) directly "
+                    "in the Download folder",
+            key='-CHKEXTRACTSRT-'
+        )
     ],
     # row 5 - Commands
     [
@@ -122,7 +153,8 @@ def on_btn_select_show(window, event, values, shows) -> ost.SubtitledShow:
     try:
         print(values['-OUTLIST-'])
         if not values['-OUTLIST-']:
-            sg.popup('Please select the show in order to download the subtitles')
+            sg.popup(
+                'Please select the show in order to download the subtitles')
         else:
             # Parse the index of the selected show related to the list "shows"
             idx = _get_idx_from_selected(values['-OUTLIST-'][0])
@@ -173,22 +205,24 @@ def on_btn_get_subtitles(window, event, values,
             srturl, filename = _get_remote_and_local_subtitles_filenames(
                 values['-DLFOLDER-'], selected_show, idx)
             print("Downloading " + srturl)
-            filesize = ost.download_srt_files(url=srturl, local_filename=filename)
+            filesize = ost.download_srt_files(url=srturl,
+                                              local_filename=filename)
             print(f"Create file {filename} ({filesize} bytes)")
             if filesize < 0:
                 sg.popup_error("Srt file download",
                                "Un error has occurred, unable to download the "
                                "selected file")
             else:
-                _open_folder_upon_choice(filename, filesize, values['-DLFOLDER-'])
+                _open_folder_upon_choice(filename, filesize,
+                                         values['-DLFOLDER-'])
     except Exception as ex:
         prompt = f"An error occurred:{ex} "
         sg.popup_error(prompt, title="")
 
 
 def _open_folder_upon_choice(filename: str, filesize: int, folder: str) -> None:
-    prompt = f"The subtitles file\n{os.path.basename(filename)}\n({filesize}"\
-             f" bytes)\nhas been downloaded, do you want to open the "\
+    prompt = f"The subtitles file\n{os.path.basename(filename)}\n({filesize}" \
+             f" bytes)\nhas been downloaded, do you want to open the " \
              f" containing folder?"
     choice = sg.popup_ok_cancel(prompt, title="")
     if choice.lower() == 'ok':
@@ -211,10 +245,23 @@ def config_settings_loop():
                                         keep_on_top=True)
             if choice.lower() == 'ok':
                 changes = _change_settings(gui_values, CONFIG_FILENAME)
-                prompt = "Settings update completed, you may need to restart"\
+                prompt = "Settings update completed, you may need to restart" \
                          " the application to apply changes"
 
                 sg.popup_ok(prompt, title='Settings', keep_on_top=True)
+
+
+def on_btn_search_tips():
+    timeout = 10
+    prompt = [
+        'If you are looking for a specific tv series episode ',
+        'add season and episode number in the format SXXEXX\n\n'
+        'ex. Grey\'s Anatomy S01E03\n',
+        'The returned results are limited to 40, if you don\'t find '
+        'what you are looking for you may need to refine \nyour search\n',
+        f'This window will close in {timeout} seconds'
+    ]
+    sg.popup_quick_message('\n'.join(prompt), auto_close_duration=10)
 
 
 def mainloop(layout: list) -> None:
@@ -236,15 +283,27 @@ def mainloop(layout: list) -> None:
     """
     shows = []
     selected_show: Union[ost.SubtitledShow, None] = None
-    window = sg.Window('Subtitles downloader', layout)
+    window = sg.Window(
+        'Subtitles downloader',
+        layout,
+        finalize=True,
+        icon=gutils.convert_to_base64(APPLOGO_FILENAME)
+    )
     while True:
         event, values = window.read()
-        print(event)
-        print(values)
+        window['-SEARCHTERMS-'].bind("<Return>", "_srcenter")
+        # print(event)
+        # print(values)
         if event in (sg.WIN_CLOSED, '-CANCEL-'):
             break
-        elif event in '-SEARCH-':
+        elif event in ['-SEARCH-', '_srcenter']:
             shows = on_btn_search(window, event, values)
+        elif event in '_srcenter':
+            print("Return pressed!")
+        elif event in '-SRCTERMSINFO-':
+            on_btn_search_tips()
+            print(values['-CHKEXTRACTSRT-'])
+            # sg.theme_previewer()
         elif event in '-SELSHOW-':
             selected_show = on_btn_select_show(window, event, values, shows)
         elif event in '-GETSUBT-':

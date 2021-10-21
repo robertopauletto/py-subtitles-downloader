@@ -125,7 +125,7 @@ def get_subtitles_for_show(show_url: str) -> List[SubtitleSrtFile]:
     if not results_table:  # Movies or TV Episodes
         itemscope = soup.find("div", {"itemtype": "http://schema.org/Movie"})
         onefile: Tag = itemscope.find('a', {'itemprop': "url"})
-        reval.append(SubtitleSrtFile(
+        retval.append(SubtitleSrtFile(
             name=onefile.text.strip().replace('\n', ' '),
             href=onefile.attrs['href']))
     else:  # Complete TV Series season or TV Episodes with 1 subtitles file
