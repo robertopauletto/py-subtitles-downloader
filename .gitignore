@@ -1,7 +1,7 @@
 venv/
 .venv/
 .env
-
+frontend-gui/res/unused/*
 .idea/
 
 __pycache__/
