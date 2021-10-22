@@ -1,4 +1,4 @@
-# main.py
+# ostdownloader.py
 
 import os
 from dataclasses import dataclass, field
