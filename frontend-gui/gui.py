@@ -1,5 +1,6 @@
 # gui.py
 
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -16,6 +17,7 @@ import gui_utils as gutils
 # careful, not exensively tested
 script_folder = Path(os.path.abspath(__name__)).parent.absolute()
 if len(script_folder.parts) == 1:
+    # In case we are already in the root of the filesystem (!?!)
     sys.path.append(os.path.join(script_folder.parts[0]))
 else:
     sys.path.append(os.path.join(*script_folder.parts[0:-1]))
@@ -29,13 +31,57 @@ if not os.path.exists(CONFIG_FILENAME):
 ini = ConfigParser()
 ini.read(CONFIG_FILENAME)
 
-# Load resourse files
+# Load resource files
 RES_FOLDER = os.path.join(os.path.abspath(os.path.dirname(__name__)), 'res')
 INFO_BTN_FILENAME = os.path.abspath(
     os.path.join(RES_FOLDER, 'info_btn16x16.png'))
+LANGCONF_BTN_FILENAME = os.path.abspath(
+    os.path.join(RES_FOLDER, 'config116x16.png'))
 APPLOGO_FILENAME = os.path.abspath(os.path.join(RES_FOLDER, 'applogo.png'))
+LANGUAGES_FILE = os.path.join(RES_FOLDER, 'languages.json')
+INFO_TIMEOUT = 10  # seconds before autoclosing the search tips window
+ITEMS_BY_ROW = 4
+APP_NAME = 'Subtitles downloader'
+VERSION = "v1.0"
 
+
+def _get_languages(languages_file: str = LANGUAGES_FILE) -> dict:
+    retval = None
+    with open(languages_file) as fh:
+        retval = json.load(fh)
+    return retval
+
+
+def _get_sel_languages(ini: ConfigParser = ini) -> str:
+    """Get selected languages from user configuration"""
+    # normalize all lower and no spaces, then recontruct the string to retrun
+    sel_lngs = [lng.strip().lower()
+                for lng in ini.get('gui', 'selected_languages').split(',')]
+    return ','.join(sel_lngs)
+
+
+LANGUAGES = _get_languages()
 sg.ChangeLookAndFeel(ini.get('gui', 'LOOKNFEEL'))
+
+
+def _save_config(ini: ConfigParser, inifile: str):
+    """Persist config changes to `inifile`"""
+    with open(inifile, 'w') as fh:
+        ini.write(fh)
+
+
+def _parse_languages(languages: dict):
+    """
+    Parse the value returned by the gui windoe for managing languages, write
+    the update values to the config, return a string to write in the
+    corresponding inputtext widget
+    :param languages:
+    :return: ex. 'ita,eng,fre' if user selects english, italian and french
+    """
+    sel_by_user = {k: v for k, v in languages.items() if v == True}
+    values_sel_by_user = [v.split('#')[1].strip() for v in sel_by_user]
+    ini.set('gui', 'selected_languages', ','.join(values_sel_by_user))
+    _save_config(ini, CONFIG_FILENAME)
 
 
 def _change_settings(sg_keyvalues: dict, inifile: str) -> list:
@@ -60,7 +106,7 @@ layout = [
     # row 1 - search
     [
         sg.Text("Enter show to search", size=(20, 1)),
-        sg.InputText(key="-SEARCHTERMS-"),
+        sg.InputText(key="-SEARCHTERMS-", size=(53, 1)),
         sg.Button(
             '',
             tooltip='Tips for searching',
@@ -75,7 +121,7 @@ layout = [
     [
         sg.Text("Download folder", size=(20, 1)),
         sg.Input(key="-DLFOLDER-", default_text=_get_def_folder(),
-                 readonly=True),
+                 readonly=True, size=(53, 1)),
         sg.FolderBrowse(tooltip='Folder to save downloaded srt files')
     ],
     # row 3 - output
@@ -84,7 +130,7 @@ layout = [
         [
             sg.Listbox(
                 values=[],
-                size=(80, 6),
+                size=(85, 6),
                 key="-OUTLIST-",
                 horizontal_scroll=True,
             ),
@@ -101,6 +147,21 @@ layout = [
             tooltip="When selected extract the subtitles file(s) directly "
                     "in the Download folder",
             key='-CHKEXTRACTSRT-'
+        ),
+        sg.Text('Languages: '),
+        sg.InputText(
+            default_text=_get_sel_languages(), readonly=True,
+            tooltip='Subtitles languages to search for',
+            size=(40, 1),
+            key='-LANGSELECTED-'
+        ),
+        sg.Button(
+            '',
+            tooltip='Add/Remove subtitle languages to search for',
+            image_data=gutils.convert_to_base64(LANGCONF_BTN_FILENAME),
+            button_color=(sg.theme_background_color(),
+                          sg.theme_background_color()),
+            border_width=0, key='-LANGCONF-'
         )
     ],
     # row 5 - Commands
@@ -246,6 +307,22 @@ def _open_folder_upon_choice(filename: str, filesize: int, folder: str) -> None:
         subprocess.call(["xdg-open", folder])
 
 
+def config_languages_settings_loop(languages: dict, sel_lang: list,
+                                   items_by_row: int):
+    gui_window = guiconf.create_language_settings_window(
+        languages, sel_lang, items_by_row)
+    while True:
+        gui_event, gui_values = gui_window.read()
+        print(gui_values)
+        if gui_event in (sg.WIN_CLOSED, '-CANCEL-') \
+                or gui_event in '-LANGCONFCLOSE-':
+            gui_window.close()
+            break
+        elif gui_event in '-LANGONFSAVE-':
+            _parse_languages(gui_values)
+            gui_window.close()
+
+
 def config_settings_loop():
     gui_window = guiconf.create_setttings_window(ini)
     while True:
@@ -266,14 +343,15 @@ def config_settings_loop():
                 sg.popup_ok(prompt, title='Settings', keep_on_top=True)
 
 
-def on_btn_search_tips():
-    timeout = 10
+def on_btn_search_tips(timeout):
     prompt = [
         'If you are looking for a specific tv series episode ',
         'add season and episode number in the format SXXEXX\n\n'
         'ex. Grey\'s Anatomy S01E03\n',
         'The returned results are limited to 40, if you don\'t find '
-        'what you are looking for you may need to refine \nyour search\n',
+        'what you are looking for you may need to refine \nyour search\n\n',
+        'Sometimes the title exists but the subtitles in the\n'
+        'selected language(s) are not available\n\n'
         f'This window will close in {timeout} seconds'
     ]
     sg.popup_quick_message('\n'.join(prompt), auto_close_duration=10)
@@ -299,7 +377,7 @@ def mainloop(layout: list) -> None:
     shows = []
     selected_show: Union[ost.SubtitledShow, None] = None
     window = sg.Window(
-        'Subtitles downloader',
+        f'{APP_NAME} - {VERSION}',
         layout,
         finalize=True,
         icon=gutils.convert_to_base64(APPLOGO_FILENAME)
@@ -316,7 +394,7 @@ def mainloop(layout: list) -> None:
         elif event in '_srcenter':
             print("Return pressed!")
         elif event in '-SRCTERMSINFO-':
-            on_btn_search_tips()
+            on_btn_search_tips(INFO_TIMEOUT)
             print(values['-CHKEXTRACTSRT-'])
             # sg.theme_previewer()
         elif event in '-SELSHOW-':
@@ -325,6 +403,10 @@ def mainloop(layout: list) -> None:
             on_btn_get_subtitles(window, event, values, selected_show)
         elif event in '-CONFIG-':
             config_settings_loop()
+        elif event in '-LANGCONF-':
+            sel_lang = values['-LANGSELECTED-'].split(',')
+            config_languages_settings_loop(LANGUAGES, sel_lang, ITEMS_BY_ROW)
+            window['-LANGSELECTED-'].update(_get_sel_languages())
     window.close()
 
 

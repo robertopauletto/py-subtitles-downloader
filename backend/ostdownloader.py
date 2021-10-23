@@ -182,6 +182,7 @@ def _parse_complete_tvseries(
                     cells[srtfile_col_season_index])))
     return retval
 
+
 def _parse_title(tag: Tag) -> str:
     text = tag.text.strip().replace('\n', ' ')
     if 'watch' in text.lower():
@@ -217,3 +218,16 @@ def download_srt_files(url: str, local_filename: str) -> int:
     if os.path.exists(local_filename):
         return os.path.getsize(local_filename)
     return -1
+
+
+def get_available_languages():
+    retval = {}
+    with open('temp.html') as fh:
+        soup = BeautifulSoup(fh.read(), 'html.parser')
+    for item in soup.find_all('input', {"name": "multiselect_SubLanguageID"}):
+        # print(item.attrs)
+        retval[item.attrs['title']] = item.attrs['value']
+    print(retval)
+
+if __name__ == '__main__':
+    get_available_languages()

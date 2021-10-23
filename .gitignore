@@ -4,6 +4,9 @@ venv/
 frontend-gui/res/unused/*
 .idea/
 
+service_parse_languages.py
+temp.html
+
 __pycache__/
 
 *.srt
