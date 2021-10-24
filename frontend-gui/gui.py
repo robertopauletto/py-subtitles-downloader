@@ -12,6 +12,7 @@ import PySimpleGUI as sg
 
 import gui_settings as guiconf
 import gui_utils as gutils
+from localfilemanagement import extract_srt
 
 # Add parent folder as source root to python path
 # careful, not exensively tested
@@ -43,6 +44,21 @@ INFO_TIMEOUT = 10  # seconds before autoclosing the search tips window
 ITEMS_BY_ROW = 4
 APP_NAME = 'Subtitles downloader'
 VERSION = "v1.0"
+
+
+# sg.theme_previewer()
+
+
+def _check_delzip_option():
+    """
+    If the option "Extract srl file after download is **NOT** selected,
+    no matter what option the user has set in the config file, will return
+    always `False`; does not make any sense deleting the zip file if you don't
+    extract the .srt file contained first.
+    """
+    if not ini.getboolean('gui', 'extract_srt'):
+        return False
+    return ini.getboolean('gui', 'delete_zip')
 
 
 def _get_languages(languages_file: str = LANGUAGES_FILE) -> dict:
@@ -119,9 +135,15 @@ layout = [
     ],
     # row 2 - download folder
     [
-        sg.Text("Download folder", size=(20, 1)),
-        sg.Input(key="-DLFOLDER-", default_text=_get_def_folder(),
-                 readonly=True, size=(53, 1)),
+        sg.Text(
+            "Download folder",
+            size=(20, 1)
+        ),
+        sg.Input(
+            key="-DLFOLDER-",
+            default_text=_get_def_folder(),
+            readonly=True, size=(53, 1)
+        ),
         sg.FolderBrowse(tooltip='Folder to save downloaded srt files')
     ],
     # row 3 - output
@@ -141,11 +163,12 @@ layout = [
     ],
     # row 5 - Options
     [
-        sg.Checkbox(
+        [sg.Checkbox(
             "Extract srl file after download",
             default=ini.getboolean('gui', 'extract_srt'),
             tooltip="When selected extract the subtitles file(s) directly "
                     "in the Download folder",
+            enable_events=True,
             key='-CHKEXTRACTSRT-'
         ),
         sg.Text('Languages: '),
@@ -162,7 +185,16 @@ layout = [
             button_color=(sg.theme_background_color(),
                           sg.theme_background_color()),
             border_width=0, key='-LANGCONF-'
-        )
+        )],
+        sg.HorizontalSeparator(),
+        [sg.Checkbox(
+            "Delete zip file after extraction",
+            default=_check_delzip_option(),
+            tooltip="Delete the subtitles compressed file"
+                    "if 'Extract srl file after download' option is selected",
+            key='-CHKDELETEZIP-'
+        )]
+
     ],
     # row 5 - Commands
     [
@@ -284,12 +316,16 @@ def on_btn_get_subtitles(window, event, values,
             print("Downloading " + srturl)
             filesize = ost.download_srt_files(url=srturl,
                                               local_filename=filename)
-            print(f"Create file {filename} ({filesize} bytes)")
+            print(f"File {filename} ({filesize} bytes) created")
             if filesize < 0:
                 sg.popup_error("Srt file download",
                                "Un error has occurred, unable to download the "
                                "selected file")
             else:
+                if values['-CHKEXTRACTSRT-']:
+                    filesize = extract_srt(filename, values['-DLFOLDER-'])
+                    if filesize:
+                        os.remove(filename)
                 _open_folder_upon_choice(filename, filesize,
                                          values['-DLFOLDER-'])
     except Exception as ex:
@@ -298,9 +334,8 @@ def on_btn_get_subtitles(window, event, values,
 
 
 def _open_folder_upon_choice(filename: str, filesize: int, folder: str) -> None:
-    prompt = f"The subtitles file\n{os.path.basename(filename)}\n({filesize}" \
-             f" bytes)\nhas been downloaded, do you want to open the " \
-             f" containing folder?"
+    prompt = f"The subtitles file has been downloaded\n"\
+             f" do you want to open the containing folder?"
     choice = sg.popup_ok_cancel(prompt, title="")
     if choice.lower() == 'ok':
         folder = os.path.abspath(folder)
@@ -390,24 +425,36 @@ def mainloop(layout: list) -> None:
         # print(values)
         if event in (sg.WIN_CLOSED, '-CANCEL-'):
             break
+        # Search opensubtitles.org by the user provided string
         elif event in ['-SEARCH-', '_srcenter']:
             shows = on_btn_search(window, event, values)
-        elif event in '_srcenter':
-            print("Return pressed!")
+        # Search tips popup window
         elif event in '-SRCTERMSINFO-':
             on_btn_search_tips(INFO_TIMEOUT)
-            print(values['-CHKEXTRACTSRT-'])
-            # sg.theme_previewer()
+        # Retrieve subtitles files for the selected show
         elif event in '-SELSHOW-':
             selected_show = on_btn_select_show(window, event, values, shows)
+        # Download the subtitle file (compressed) chosen by the user
         elif event in '-GETSUBT-':
             on_btn_get_subtitles(window, event, values, selected_show)
+        # GUI for configuration
         elif event in '-CONFIG-':
             config_settings_loop()
+        # GUI for subtitle languages selection
         elif event in '-LANGCONF-':
             sel_lang = values['-LANGSELECTED-'].split(',')
             config_languages_settings_loop(LANGUAGES, sel_lang, ITEMS_BY_ROW)
             window['-LANGSELECTED-'].update(_get_sel_languages())
+        # Syncronize the 'extract srt file' and 'delete zip file' options
+        elif event in '-CHKEXTRACTSRT-':
+            if not values[event]:
+                # If 'extract srl file' is disable no matter what the
+                # downloaded .zip file will not be deleted
+                window['-CHKDELETEZIP-'].update(False)
+                window['-CHKDELETEZIP-'].update(disabled=True)
+            else:
+                window['-CHKDELETEZIP-'].update(disabled=False)
+
     window.close()
 
 
