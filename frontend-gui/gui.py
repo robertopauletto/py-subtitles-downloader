@@ -198,8 +198,9 @@ def on_btn_search(window, event, values) -> list:
         print("Search button pressed!")
         window['-GETSUBT-'].update(disabled=True)
         window['-SELSHOW-'].update(disabled=True)
-        shows = ost.search_show(values['-SEARCHTERMS-'],
-                                ini.get('parser', 'OST_SEARCH_URL'))
+        lng = values['-LANGSELECTED-']
+        qs = ini.get('parser', 'OST_SEARCH_URL').format(lng)
+        shows = ost.search_show(values['-SEARCHTERMS-'], qs)
         window['-LISTTITLE-'].update('Shows matching the query string, please '
                                      'select one in order to download the '
                                      'subtitle file')
