@@ -157,7 +157,7 @@ layout = [
                 horizontal_scroll=True,
             ),
         ],
-        [sg.Text("Enter text to search, then hit the 'SEARCH BUTTON'",
+        [sg.Text("Enter text to search, then click the 'SEARCH' button",
                  size=(80, 1), key='-LISTTITLE-')],
         [sg.HSeparator()],
     ],
