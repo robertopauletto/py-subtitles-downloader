@@ -44,6 +44,11 @@ INFO_TIMEOUT = 10  # seconds before autoclosing the search tips window
 ITEMS_BY_ROW = 4
 APP_NAME = 'Subtitles downloader'
 VERSION = "v1.0"
+MEDIA_EXTENSIONS = (
+    ('Video Files', '*.mkv *.mp4 *.avi *.mpg *.wav'),
+    ('ALL Files', '*.* *'),
+)
+MEDIA_DEFAULT_FOLDER = os.path.abspath(ini.get('paths', 'default_media_folder'))
 
 
 # sg.theme_previewer()
@@ -51,7 +56,7 @@ VERSION = "v1.0"
 
 def _check_delzip_option():
     """
-    If the option "Extract srl file after download is **NOT** selected,
+    If the option "Extract srl file after download" is **NOT** selected,
     no matter what option the user has set in the config file, will return
     always `False`; does not make any sense deleting the zip file if you don't
     extract the .srt file contained first.
@@ -70,7 +75,7 @@ def _get_languages(languages_file: str = LANGUAGES_FILE) -> dict:
 
 def _get_sel_languages(ini: ConfigParser = ini) -> str:
     """Get selected languages from user configuration"""
-    # normalize all lower and no spaces, then recontruct the string to retrun
+    # normalize all lower and no spaces, then reconstruct the string to retrun
     sel_lngs = [lng.strip().lower()
                 for lng in ini.get('gui', 'selected_languages').split(',')]
     return ','.join(sel_lngs)
@@ -88,24 +93,30 @@ def _save_config(ini: ConfigParser, inifile: str):
 
 def _parse_languages(languages: dict):
     """
-    Parse the value returned by the gui windoe for managing languages, write
+    Parse the value returned by the gui window for managing languages, write
     the update values to the config, return a string to write in the
     corresponding inputtext widget
     :param languages:
     :return: ex. 'ita,eng,fre' if user selects english, italian and french
     """
-    sel_by_user = {k: v for k, v in languages.items() if v == True}
+    sel_by_user = {k: v for k, v in languages.items() if v is True}
     values_sel_by_user = [v.split('#')[1].strip() for v in sel_by_user]
     ini.set('gui', 'selected_languages', ','.join(values_sel_by_user))
     _save_config(ini, CONFIG_FILENAME)
 
 
 def _change_settings(sg_keyvalues: dict, inifile: str) -> list:
-    """Modify configuration setting"""
+    """
+    Rewrite ini file according to configuration window
+
+    :param sg_keyvalues: key, values from config window
+    :param inifile:
+    :return: a list of made changes
+    """
     changes = []
     for sgkey, value in sg_keyvalues.items():
         section, key = sgkey.split('#')
-        if ini.get(section, key) == value:
+        if ini.get(section, key) == value:  # no chages for key
             continue
         changes.append(f"{section} -> {key} modified: {value}")
         ini.set(section, key, value)
@@ -115,6 +126,7 @@ def _change_settings(sg_keyvalues: dict, inifile: str) -> list:
 
 
 def _get_def_folder():
+    """Return default download folder"""
     return os.path.abspath(ini.get('paths', 'OST_DL_FOLDER'))
 
 
@@ -122,7 +134,21 @@ layout = [
     # row 1 - search
     [
         sg.Text("Enter show to search", size=(20, 1)),
-        sg.InputText(key="-SEARCHTERMS-", size=(53, 1)),
+        sg.InputText(key="-SEARCHTERMS-", size=(43, 1)),
+        # Placeholder for the -MEDIAFILE- FileBrowser widget in order to
+        # manipulate the text inserting in -SEARCHTERMS- the filename only
+        # and the folder path in -DLFOLDER-
+        sg.InputText(key="-SELMEDIAFILE-", enable_events=True, visible=False),
+        sg.FileBrowse(
+            button_text="FROM FILE",
+            target="-SELMEDIAFILE-",
+            file_types=MEDIA_EXTENSIONS,
+            initial_folder=MEDIA_DEFAULT_FOLDER,
+            tooltip="Paste filename of media to target, the download folder "
+                    "will be changed accordingly",
+            key='-MEDIAFILE-',
+            enable_events=True
+        ),
         sg.Button(
             '',
             tooltip='Tips for searching',
@@ -144,7 +170,8 @@ layout = [
             default_text=_get_def_folder(),
             readonly=True, size=(53, 1)
         ),
-        sg.FolderBrowse(tooltip='Folder to save downloaded srt files')
+        sg.FolderBrowse(button_text="BROWSE",
+                        tooltip='Folder to save downloaded srt files')
     ],
     # row 3 - output
     [
@@ -171,21 +198,21 @@ layout = [
             enable_events=True,
             key='-CHKEXTRACTSRT-'
         ),
-        sg.Text('Languages: '),
-        sg.InputText(
-            default_text=_get_sel_languages(), readonly=True,
-            tooltip='Subtitles languages to search for',
-            size=(40, 1),
-            key='-LANGSELECTED-'
-        ),
-        sg.Button(
-            '',
-            tooltip='Add/Remove subtitle languages to search for',
-            image_data=gutils.convert_to_base64(LANGCONF_BTN_FILENAME),
-            button_color=(sg.theme_background_color(),
-                          sg.theme_background_color()),
-            border_width=0, key='-LANGCONF-'
-        )],
+            sg.Text('Languages: '),
+            sg.InputText(
+                default_text=_get_sel_languages(), readonly=True,
+                tooltip='Subtitles languages to search for',
+                size=(40, 1),
+                key='-LANGSELECTED-'
+            ),
+            sg.Button(
+                '',
+                tooltip='Add/Remove subtitle languages to search for',
+                image_data=gutils.convert_to_base64(LANGCONF_BTN_FILENAME),
+                button_color=(sg.theme_background_color(),
+                              sg.theme_background_color()),
+                border_width=0, key='-LANGCONF-'
+            )],
         sg.HorizontalSeparator(),
         [sg.Checkbox(
             "Delete zip file after extraction",
@@ -243,6 +270,12 @@ def on_btn_search(window, event, values) -> list:
     except Exception as ex:
         prompt = f"An error occurred:{ex} "
         sg.popup_error(prompt, title="")
+
+
+def on_btn_string_src_from_media_file(window, event, values) -> None:
+    folderpath, filename = os.path.split(values['-SELMEDIAFILE-'])
+    window['-SEARCHTERMS-'].update(value=filename,  select=True)
+    window['-DLFOLDER-'].update(value=folderpath)
 
 
 def _get_idx_from_selected(item,
@@ -334,7 +367,7 @@ def on_btn_get_subtitles(window, event, values,
 
 
 def _open_folder_upon_choice(filename: str, filesize: int, folder: str) -> None:
-    prompt = f"The subtitles file has been downloaded\n"\
+    prompt = f"The subtitles file has been downloaded\n" \
              f" do you want to open the containing folder?"
     choice = sg.popup_ok_cancel(prompt, title="")
     if choice.lower() == 'ok':
@@ -421,13 +454,18 @@ def mainloop(layout: list) -> None:
     while True:
         event, values = window.read()
         window['-SEARCHTERMS-'].bind("<Return>", "_srcenter")
+        # print("EVENT")
         # print(event)
+        # print("VALUES")
         # print(values)
         if event in (sg.WIN_CLOSED, '-CANCEL-'):
             break
         # Search opensubtitles.org by the user provided string
         elif event in ['-SEARCH-', '_srcenter']:
             shows = on_btn_search(window, event, values)
+        # Get search string from media file selected by user
+        elif event in ['-SELMEDIAFILE-']:
+            on_btn_string_src_from_media_file(window, event, values)
         # Search tips popup window
         elif event in '-SRCTERMSINFO-':
             on_btn_search_tips(INFO_TIMEOUT)

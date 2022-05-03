@@ -5,7 +5,8 @@ from dataclasses import dataclass, field
 from typing import List, Union, Any
 
 import requests
-from bs4 import BeautifulSoup, Tag, ResultSet
+from bs4 import BeautifulSoup
+from bs4.element import Tag, ResultSet
 
 SRTFILE_COL_EP_INDEX = 4
 SRTFILE_COL_SEASON_INDEX = 2
@@ -22,7 +23,8 @@ class Subtitle:
         return f"{domain}{self.href}"
 
     def to_json(self) -> dict:
-        return {"name": self.name, href: "self.href"}
+        """JSON representation of the object"""
+        return {"name": self.name, "href": self.href}
 
     @staticmethod
     def parse(**kwargs) -> Any:
@@ -31,13 +33,13 @@ class Subtitle:
 
 @dataclass
 class SubtitleSrtFile(Subtitle):
-    """Represent a subtitle file"""
+    """Represents a subtitle file"""
     pass
 
 
 @dataclass
 class SubtitledShow(Subtitle):
-    """Represent a show to search for subtitles"""
+    """Represents a show to search for subtitles"""
     episode: str = ""
     srt_files: List[SubtitleSrtFile] = field(default_factory=[])
 
@@ -116,7 +118,7 @@ def search_show(search_terms: str, root_search: str):
 
 
 def get_subtitles_for_show(show_url: str) -> List[SubtitleSrtFile]:
-    """Parse subtitle files available for `show`"""
+    """Parse subtitle files available for `show_url` page"""
     srtfile_col_ep_index = SRTFILE_COL_EP_INDEX
     srtfile_col_season_index = SRTFILE_COL_SEASON_INDEX
     soup: BeautifulSoup = _get_html(show_url)
@@ -228,6 +230,7 @@ def get_available_languages():
         # print(item.attrs)
         retval[item.attrs['title']] = item.attrs['value']
     print(retval)
+
 
 if __name__ == '__main__':
     get_available_languages()

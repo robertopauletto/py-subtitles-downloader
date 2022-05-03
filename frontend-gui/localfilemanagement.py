@@ -13,7 +13,7 @@ def extract_srt(zipfilename: str,
     :param outfolder: Where to copy the .srt files, if None the folder of
                       the compressed file will be used
     :param ext: The extension of the file to extract (case insensitive)
-    :return:
+    :return: Bytes extracted
     """
     outfolder = outfolder or os.path.abspath(os.path.dirname(zipfilename))
 
@@ -30,10 +30,3 @@ def extract_srt(zipfilename: str,
     except Exception as exc:
         print(exc)
         return -1
-
-
-if __name__ == '__main__':
-    fn = '../hr.zip'
-    of = '/home/robby/Torrents/subtitles'
-    print(extract_srt(fn, of))
-

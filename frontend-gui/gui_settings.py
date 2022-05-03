@@ -6,6 +6,7 @@ import PySimpleGUI as sg
 
 
 def create_setttings_window(ini: ConfigParser) -> sg.Window:
+    """Builds a window with the user setting based on the ini file"""
     layout = []
     for section_name in ini.sections():
         section_items = []
