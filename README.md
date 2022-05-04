@@ -1,6 +1,6 @@
 # Download subtitles from www.opensubtitles.org
 
-This program scrapes opensubtitles.org to find and download sutitles.
+This program scrapes opensubtitles.org to find and download subtitles.
 
 Local interface GUI with PySimpleGUI.
 
