@@ -256,9 +256,9 @@ def mainloop(layout: list) -> None:
         finalize=True,
         icon=gutils.convert_to_base64(APPLOGO_FILENAME)
     )
+    window['-SEARCHTERMS-'].bind("<Return>", "_srcenter")
     while True:
         event, values = window.read()
-        window['-SEARCHTERMS-'].bind("<Return>", "_srcenter")
         # print("EVENT")
         # print(event)
         # print("VALUES")

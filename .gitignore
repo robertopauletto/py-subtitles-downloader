@@ -1,6 +1,7 @@
 venv/
 .venv/
 .env
+frontend-gui/config.ini
 frontend-gui/res/unused/*
 .idea/
 

@@ -3,11 +3,11 @@ ost_domain = https://www.opensubtitles.org
 ost_search_url = https://www.opensubtitles.org/en/search2/sublanguageid-{}/moviename-
 
 [gui]
-looknfeel = LightBrown1
+looknfeel = SandyBeach
 extract_srt = true
 delete_zip = True
 selected_languages = eng
 
 [paths]
-ost_dl_folder = /dati4
-default_media_folder = /media/robby/Seagate Expansion Drive/dl
+ost_dl_folder = /somefolder
+default_media_folder = /maybe/some/other/folder
