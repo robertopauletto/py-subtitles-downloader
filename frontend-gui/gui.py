@@ -51,9 +51,6 @@ MEDIA_EXTENSIONS = (
 MEDIA_DEFAULT_FOLDER = os.path.abspath(ini.get('paths', 'default_media_folder'))
 
 
-# sg.theme_previewer()
-
-
 def _check_delzip_option():
     """
     If the option "Extract srl file after download" is **NOT** selected,
@@ -134,13 +131,13 @@ layout = [
     # row 1 - search
     [
         sg.Text("Enter show to search", size=(20, 1)),
-        sg.InputText(key="-SEARCHTERMS-", size=(43, 1)),
+        sg.InputText(key="-SEARCHTERMS-", size=(49, 1)),
         # Placeholder for the -MEDIAFILE- FileBrowser widget in order to
         # manipulate the text inserting in -SEARCHTERMS- the filename only
         # and the folder path in -DLFOLDER-
         sg.InputText(key="-SELMEDIAFILE-", enable_events=True, visible=False),
         sg.FileBrowse(
-            button_text="FROM FILE",
+            button_text="From File",
             target="-SELMEDIAFILE-",
             file_types=MEDIA_EXTENSIONS,
             initial_folder=MEDIA_DEFAULT_FOLDER,
@@ -151,12 +148,12 @@ layout = [
         ),
         sg.Button(
             '',
-            tooltip='Tips for searching',
+            tooltip='Click for tips about searching',
             image_data=gutils.convert_to_base64(INFO_BTN_FILENAME),
             button_color=(sg.theme_background_color(),
                           sg.theme_background_color()),
             border_width=0, key='-SRCTERMSINFO-'
-        )
+        ),
 
     ],
     # row 2 - download folder
@@ -168,9 +165,9 @@ layout = [
         sg.Input(
             key="-DLFOLDER-",
             default_text=_get_def_folder(),
-            readonly=True, size=(53, 1)
+            readonly=True, size=(49, 1)
         ),
-        sg.FolderBrowse(button_text="BROWSE",
+        sg.FolderBrowse(button_text="Browse", size=(8, 1),
                         tooltip='Folder to save downloaded srt files')
     ],
     # row 3 - output
@@ -225,13 +222,83 @@ layout = [
     ],
     # row 5 - Commands
     [
-        sg.OK("SEARCH", key="-SEARCH-"),
-        sg.Button("GET SHOW", key="-SELSHOW-", disabled=True),
-        sg.Button("GET SUBTITLES", key="-GETSUBT-", disabled=True),
-        sg.Button("CONFIGURE", key="-CONFIG-"),
-        sg.Cancel("QUIT", key="-CANCEL-")
+        sg.OK("Search", key="-SEARCH-"),
+        sg.Button("Get Show", key="-SELSHOW-", disabled=True),
+        sg.Button("Get Subtitles", key="-GETSUBT-", disabled=True),
+        sg.Button("Configure", key="-CONFIG-"),
+        sg.Cancel("Quit", key="-CANCEL-")
     ]  # last row
 ]
+
+
+def mainloop(layout: list) -> None:
+    """
+    Main event loop, tipically:
+
+    1) USER: types the query string for a show, then click -SEARCH-
+    2) APP: populate -OUTLIST- with the shows found for the search string,
+       enable the -SELSHOW- button
+    3) USER: single click on the desired show, then click on -SELSHOW-
+    4) APP: retrieve and populate -OUTLIST- with the subtitle file name
+       associated with the selected show, enable the -GETSUBT- button
+    5) USER: single click on the subtitle file he needs, theN click on -GETSUBT-
+    6) APP: download the selected subtitle file and saves locally to the path
+       specified in the textbox -OUTFOLDER-, prompting the user.
+
+        :param layout: widget disposition
+    :return:
+    """
+    shows = []
+    selected_show: Union[ost.SubtitledShow, None] = None
+    window = sg.Window(
+        f'{APP_NAME} - {VERSION}',
+        layout,
+        finalize=True,
+        icon=gutils.convert_to_base64(APPLOGO_FILENAME)
+    )
+    while True:
+        event, values = window.read()
+        window['-SEARCHTERMS-'].bind("<Return>", "_srcenter")
+        # print("EVENT")
+        # print(event)
+        # print("VALUES")
+        # print(values)
+        if event in (sg.WIN_CLOSED, '-CANCEL-'):
+            break
+        # Search opensubtitles.org by the user provided string
+        elif event in ['-SEARCH-', '_srcenter']:
+            shows = on_btn_search(window, event, values)
+        # Get search string from media file selected by user
+        elif event in ['-SELMEDIAFILE-']:
+            on_btn_string_src_from_media_file(window, event, values)
+        # Search tips popup window
+        elif event in '-SRCTERMSINFO-':
+            on_btn_search_tips(INFO_TIMEOUT)
+        # Retrieve subtitles files for the selected show
+        elif event in '-SELSHOW-':
+            selected_show = on_btn_select_show(window, event, values, shows)
+        # Download the subtitle file (compressed) chosen by the user
+        elif event in '-GETSUBT-':
+            on_btn_get_subtitles(window, event, values, selected_show)
+        # GUI for configuration
+        elif event in '-CONFIG-':
+            config_settings_loop()
+        # GUI for subtitle languages selection
+        elif event in '-LANGCONF-':
+            sel_lang = values['-LANGSELECTED-'].split(',')
+            config_languages_settings_loop(LANGUAGES, sel_lang, ITEMS_BY_ROW)
+            window['-LANGSELECTED-'].update(_get_sel_languages())
+        # Syncronize the 'extract srt file' and 'delete zip file' options
+        elif event in '-CHKEXTRACTSRT-':
+            if not values[event]:
+                # If 'extract srl file' is disable no matter what the
+                # downloaded .zip file will not be deleted
+                window['-CHKDELETEZIP-'].update(False)
+                window['-CHKDELETEZIP-'].update(disabled=True)
+            else:
+                window['-CHKDELETEZIP-'].update(disabled=False)
+
+    window.close()
 
 
 def _enumerate_items(items: list, start: int = 1, idx_sep: str = ' - ') -> list:
@@ -382,7 +449,7 @@ def config_languages_settings_loop(languages: dict, sel_lang: list,
         languages, sel_lang, items_by_row)
     while True:
         gui_event, gui_values = gui_window.read()
-        print(gui_values)
+        print(gui_values, gui_event)
         if gui_event in (sg.WIN_CLOSED, '-CANCEL-') \
                 or gui_event in '-LANGCONFCLOSE-':
             gui_window.close()
@@ -426,74 +493,6 @@ def on_btn_search_tips(timeout):
     sg.popup_quick_message('\n'.join(prompt), auto_close_duration=10)
 
 
-def mainloop(layout: list) -> None:
-    """
-    Main event loop, tipically:
-
-    1) USER: types the query string for a show, then click -SEARCH-
-    2) APP: populate -OUTLIST- with the shows found for the search string,
-       enable the -SELSHOW- button
-    3) USER: single click on the desired show, then click on -SELSHOW-
-    4) APP: retrieve and populate -OUTLIST- with the subtitle file name
-       associated with the selected show, enable the -GETSUBT- button
-    5) USER: single click on the subtitle file he needs, theN click on -GETSUBT-
-    6) APP: download the selected subtitle file and saves locally to the path
-       specified in the textbox -OUTFOLDER-, prompting the user.
-
-    :param layout: widget disposition
-    :return:
-    """
-    shows = []
-    selected_show: Union[ost.SubtitledShow, None] = None
-    window = sg.Window(
-        f'{APP_NAME} - {VERSION}',
-        layout,
-        finalize=True,
-        icon=gutils.convert_to_base64(APPLOGO_FILENAME)
-    )
-    while True:
-        event, values = window.read()
-        window['-SEARCHTERMS-'].bind("<Return>", "_srcenter")
-        # print("EVENT")
-        # print(event)
-        # print("VALUES")
-        # print(values)
-        if event in (sg.WIN_CLOSED, '-CANCEL-'):
-            break
-        # Search opensubtitles.org by the user provided string
-        elif event in ['-SEARCH-', '_srcenter']:
-            shows = on_btn_search(window, event, values)
-        # Get search string from media file selected by user
-        elif event in ['-SELMEDIAFILE-']:
-            on_btn_string_src_from_media_file(window, event, values)
-        # Search tips popup window
-        elif event in '-SRCTERMSINFO-':
-            on_btn_search_tips(INFO_TIMEOUT)
-        # Retrieve subtitles files for the selected show
-        elif event in '-SELSHOW-':
-            selected_show = on_btn_select_show(window, event, values, shows)
-        # Download the subtitle file (compressed) chosen by the user
-        elif event in '-GETSUBT-':
-            on_btn_get_subtitles(window, event, values, selected_show)
-        # GUI for configuration
-        elif event in '-CONFIG-':
-            config_settings_loop()
-        # GUI for subtitle languages selection
-        elif event in '-LANGCONF-':
-            sel_lang = values['-LANGSELECTED-'].split(',')
-            config_languages_settings_loop(LANGUAGES, sel_lang, ITEMS_BY_ROW)
-            window['-LANGSELECTED-'].update(_get_sel_languages())
-        # Syncronize the 'extract srt file' and 'delete zip file' options
-        elif event in '-CHKEXTRACTSRT-':
-            if not values[event]:
-                # If 'extract srl file' is disable no matter what the
-                # downloaded .zip file will not be deleted
-                window['-CHKDELETEZIP-'].update(False)
-                window['-CHKDELETEZIP-'].update(disabled=True)
-            else:
-                window['-CHKDELETEZIP-'].update(disabled=False)
-
-    window.close()
 
 
 if __name__ == '__main__':

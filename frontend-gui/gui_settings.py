@@ -37,6 +37,7 @@ def create_language_settings_window(languages: dict,
     Builds a window with all the subtitles languages available, the user
     can add or remove any language. The selected languages will be used
     in the query string.
+
     :param languages: all languages available
     :param lang_selected: the currently selected languages
     :param items_by_row: number of items to display for each row
