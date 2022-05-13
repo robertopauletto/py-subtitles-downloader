@@ -5,7 +5,6 @@ This program scrapes opensubtitles.org to find and download subtitles.
 
 Local interface GUI with PySimpleGUI.
 
-![img.png](img.png)
 ![App](screen1.png)
 
 ## Setup
@@ -18,7 +17,7 @@ Local interface GUI with PySimpleGUI.
 - Copy or rename `config.ini.example` to `config.ini`, edit the `paths` section
 - Launch the program: `python gui.py`
 
-You can change the look and feed of the GUI by editing the `looknfeel` key in `config.ini`.
+You can change the look and feel of the GUI by editing the `looknfeel` key in `config.ini`.
 Available themes are:
 
 - SystemDefault
