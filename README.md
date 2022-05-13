@@ -1,10 +1,14 @@
+
 # Download subtitles from www.opensubtitles.org
 
 This program scrapes opensubtitles.org to find and download subtitles.
 
 Local interface GUI with PySimpleGUI.
 
-## Usage
+![img.png](img.png)
+![App](screen1.png)
+
+## Setup
 
 - Clone the project
 - Set up a virtual environment in the project root folder `python3 -m venv .venv`
@@ -42,3 +46,10 @@ Available themes are:
 - Kayak
 - SandyBeach
 - TealMono
+
+## Usage
+
+- Enter search terms by hand or selecting the related media file by clicking "From File", adjust the search terms if anything is found.
+- Click "Get Show" to get a list of subtitles files found for that show.
+- Select one then click 'Get Subtitles' to download the zipped subtitles file.
+- The file will be downloaded in the selected "Download folder", unzipped if "Extract file after download" is checked
