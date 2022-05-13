@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 from configparser import ConfigParser
-from typing import Union, Tuple
+from typing import Union, Tuple, Literal, Any
 
 import PySimpleGUI as sg
 
@@ -28,7 +28,7 @@ import backend.ostdownloader as ost
 # Get configuration, MUST be present
 CONFIG_FILENAME = 'config.ini'
 if not os.path.exists(CONFIG_FILENAME):
-    raise EnvironmentError("Cnfig file 'config.ini' is missing")
+    raise EnvironmentError(f"Config file '{CONFIG_FILENAME}' is missing")
 ini = ConfigParser()
 ini.read(CONFIG_FILENAME)
 
@@ -43,7 +43,7 @@ LANGUAGES_FILE = os.path.join(RES_FOLDER, 'languages.json')
 INFO_TIMEOUT = 10  # seconds before autoclosing the search tips window
 ITEMS_BY_ROW = 4
 APP_NAME = 'Subtitles downloader'
-VERSION = "v1.0"
+VERSION = "v1.1"
 MEDIA_EXTENSIONS = (
     ('Video Files', '*.mkv *.mp4 *.avi *.mpg *.wav'),
     ('ALL Files', '*.* *'),
@@ -51,16 +51,16 @@ MEDIA_EXTENSIONS = (
 MEDIA_DEFAULT_FOLDER = os.path.abspath(ini.get('paths', 'default_media_folder'))
 
 
-def _check_delzip_option():
-    """
-    If the option "Extract srl file after download" is **NOT** selected,
-    no matter what option the user has set in the config file, will return
-    always `False`; does not make any sense deleting the zip file if you don't
-    extract the .srt file contained first.
-    """
-    if not ini.getboolean('gui', 'extract_srt'):
-        return False
-    return ini.getboolean('gui', 'delete_zip')
+def _get_ini_option_with_type(section: str, key: str,
+                              valtype: Literal['s', 'i', 'b'] = 's') -> Any:
+    if section not in ini.sections():
+        return None
+    if valtype in 'Ss':
+        return ini.get(section, key, fallback=None)
+    elif valtype in 'Bb':
+        return ini.getboolean(section, key, fallback=False)
+    elif valtype in 'iI':
+        return ini.getint(section, key, fallback=None)
 
 
 def _get_languages(languages_file: str = LANGUAGES_FILE) -> dict:
@@ -189,7 +189,7 @@ layout = [
     [
         [sg.Checkbox(
             "Extract srl file after download",
-            default=ini.getboolean('gui', 'extract_srt'),
+            default=_get_ini_option_with_type('gui', 'extract_srt', 'b'),
             tooltip="When selected extract the subtitles file(s) directly "
                     "in the Download folder",
             enable_events=True,
@@ -213,10 +213,17 @@ layout = [
         sg.HorizontalSeparator(),
         [sg.Checkbox(
             "Delete zip file after extraction",
-            default=_check_delzip_option(),
+            default=_get_ini_option_with_type('gui', 'delete_zip', 'b'),
             tooltip="Delete the subtitles compressed file"
                     "if 'Extract srl file after download' option is selected",
             key='-CHKDELETEZIP-'
+        )],
+        [sg.Checkbox(
+            "Subtitles filename equals to referring media file",
+            default=_get_ini_option_with_type(
+                'gui', 'ost_filename_as_referring_media', 'b'),
+            tooltip="",
+            key='-CHKOSTASMEDIA-'
         )]
 
     ],
@@ -341,7 +348,8 @@ def on_btn_search(window, event, values) -> list:
 
 def on_btn_string_src_from_media_file(window, event, values) -> None:
     folderpath, filename = os.path.split(values['-SELMEDIAFILE-'])
-    window['-SEARCHTERMS-'].update(value=filename,  select=True)
+    name, _ = os.path.splitext(filename)  # Paste file name without extensions
+    window['-SEARCHTERMS-'].update(value=name,  select=True)
     window['-DLFOLDER-'].update(value=folderpath)
 
 
@@ -423,7 +431,11 @@ def on_btn_get_subtitles(window, event, values,
                                "selected file")
             else:
                 if values['-CHKEXTRACTSRT-']:
-                    filesize = extract_srt(filename, values['-DLFOLDER-'])
+                    rename_as = ""
+                    if values['-CHKOSTASMEDIA-']:
+                        rename_as = values['-SELMEDIAFILE-']
+                    filesize = extract_srt(
+                        filename, values['-DLFOLDER-'], rename_as=rename_as)
                     if filesize:
                         os.remove(filename)
                 _open_folder_upon_choice(filename, filesize,

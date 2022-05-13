@@ -204,7 +204,7 @@ def download_srt_files(url: str, local_filename: str) -> int:
     Download the subtitle file (.zip)
     :param url:
     :param local_filename: optional extension, default .zip will be added
-                            if missing
+                           if missing
     :return:  file size of downloaded file
     """
     _, ext = os.path.splitext(local_filename)
@@ -214,7 +214,7 @@ def download_srt_files(url: str, local_filename: str) -> int:
     resp = requests.get(url)
     if not resp.ok:
         resp.raise_for_status()
-    print(os.path.abspath(local_filename))
+    # print(os.path.abspath(local_filename))
     with open(local_filename, 'wb') as fh:
         fh.write(resp.content)
     if os.path.exists(local_filename):
