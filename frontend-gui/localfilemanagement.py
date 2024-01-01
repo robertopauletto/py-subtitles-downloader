@@ -1,18 +1,21 @@
 # localfilemanagement.py
 
+import logging
 import os
 from typing import Union
 import zipfile
 
+logger = logging.getLogger(__name__)
 
-def extract_srt(zipfilename: str,  outfolder: Union[str, None] = None,
+
+def extract_srt(zipfilename: str, outfolder: Union[str, None] = None,
                 ext: str = '.srt', rename_as: str = "") -> int:
     """
     Extract every .srt file in `zipfilename` to `outfolder`
     :param zipfilename:
     :param outfolder: Where to copy the .srt files, if None the folder of
                       the compressed file will be used
-    :param ext: The extension of the file to extract (case insensitive)
+    :param ext: The extension of the file to extract (case-insensitive)
     :param rename_as: If not empty will be the name of the extracted .srt file
                       if such name exists will be manteined the original
                       filename. Useful to load automatically the .srt file in
@@ -27,7 +30,7 @@ def extract_srt(zipfilename: str,  outfolder: Union[str, None] = None,
             for info in zfh.infolist():
                 if not info.filename.lower().endswith(ext):
                     continue
-                # print(f"Extracting {info.filename} to {outfolder}")
+                logger.debug(f"Extracting {info.filename} to {outfolder}")
                 zfh.extract(info.filename, outfolder)
                 filesizes += info.file_size
                 if rename_as:
@@ -39,8 +42,21 @@ def extract_srt(zipfilename: str,  outfolder: Union[str, None] = None,
         return -1
 
 
-def _rename_srt_file(oldname_path: str, newname: str) -> None:
-    if os.path.exists(oldname_path):
+def _rename_srt_file(oldname_path: str, media_name: str) -> None:
+    """
+    Renames a subtitle file to match the name of the corresponding media file.
+
+    Args:
+        oldname_path (str): Path to the subtitle file that needs to be renamed.
+        media_name (str): The fullpath name of the media file.
+
+    """
+    if not os.path.exists(oldname_path):
         return
-    folder, _ = os.path.split(oldname_path)
-    os.rename(oldname_path, os.path.join(folder, newname))
+    media_folder, media_filename = os.path.split(media_name)
+    media_filename_wo_ext, _ = os.path.splitext(media_filename)
+    new_srt_filename = os.path.join(
+        media_folder, media_filename_wo_ext + '.srt'
+    )
+    logging.debug(f"Renaming {oldname_path} to {new_srt_filename}")
+    os.rename(oldname_path, os.path.join(media_folder, new_srt_filename))

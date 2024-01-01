@@ -12,9 +12,19 @@ SRTFILE_COL_EP_INDEX = 4
 SRTFILE_COL_SEASON_INDEX = 2
 
 
+class SubtitleException(Exception):
+    """Base class for exceptions in this module"""
+    pass
+
+
+class SubtitleExceptionRequests(SubtitleException):
+    """Exception raised for errors in requests"""
+    pass
+
+
 @dataclass
 class Subtitle:
-    """Subtitle downloader base class"""
+    """Subtitle base class"""
     name: str
     href: str
 
@@ -41,7 +51,7 @@ class SubtitleSrtFile(Subtitle):
 class SubtitledShow(Subtitle):
     """Represents a show to search for subtitles"""
     episode: str = ""
-    srt_files: List[SubtitleSrtFile] = field(default_factory=[])
+    srt_files: List[SubtitleSrtFile] = field(default_factory=list)
 
     def to_json(self) -> dict:
         retval = super().to_json()
@@ -79,11 +89,24 @@ class SubtitledShow(Subtitle):
 
 
 def _get_html(url: str) -> BeautifulSoup:
-    """Read from `url` and return an object for parsing"""
-    resp = requests.get(url)
-    if not resp.ok:
-        resp.raise_for_status()
-    return BeautifulSoup(resp.text, 'html.parser')
+    """
+    Get the HTML content of a given URL and parse it using BeautifulSoup.
+
+    Parameters:
+    - url: A string representing the URL of the webpage to retrieve.
+
+    Returns:
+    - BeautifulSoup: An object representing the parsed HTML content.
+    """
+    try:
+        resp = requests.get(url)
+        if not resp.ok:
+            resp.raise_for_status()
+        return BeautifulSoup(resp.text, 'html.parser')
+    except requests.RequestException as e:
+        raise SubtitleExceptionRequests(e)
+    except Exception as e:
+        raise SubtitleException(e)
 
 
 def _parse_show_disambiguation(results_table: Tag) -> List[Subtitle]:

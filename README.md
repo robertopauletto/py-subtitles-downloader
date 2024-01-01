@@ -48,7 +48,9 @@ Available themes are:
 
 ## Usage
 
-- Enter search terms by hand or selecting the related media file by clicking "From File", adjust the search terms if anything is found.
+- Enter search terms by hand or selecting the related media file by clicking 
+  "From File", adjust the search terms if nothing is found.
 - Click "Get Show" to get a list of subtitles files found for that show.
-- Select one then click 'Get Subtitles' to download the zipped subtitles file.
-- The file will be downloaded in the selected "Download folder", unzipped if "Extract file after download" is checked
+- Select one subtitle file, then click 'Get Subtitles' to download it.
+- The file will be downloaded in the selected "Download folder" and unzipped  
+  if "Extract file after download" is checked.

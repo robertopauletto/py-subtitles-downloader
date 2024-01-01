@@ -1,18 +1,24 @@
 # gui.py
 
 import json
+import logging
 import os
 from pathlib import Path
 import subprocess
 import sys
 from configparser import ConfigParser
-from typing import Union, Tuple, Literal, Any
+from typing import Union, Tuple, Literal, Any, List
 
 import PySimpleGUI as sg
 
+from logging_conf import configure_logging
 import gui_settings as guiconf
 import gui_utils as gutils
 from localfilemanagement import extract_srt
+
+logger = logging.getLogger(__name__)
+configure_logging()
+
 
 # Add parent folder as source root to python path
 # careful, not exensively tested
@@ -22,6 +28,7 @@ if len(script_folder.parts) == 1:
     sys.path.append(os.path.join(script_folder.parts[0]))
 else:
     sys.path.append(os.path.join(*script_folder.parts[0:-1]))
+
 
 import backend.ostdownloader as ost
 
@@ -53,6 +60,22 @@ MEDIA_DEFAULT_FOLDER = os.path.abspath(ini.get('paths', 'default_media_folder'))
 
 def _get_ini_option_with_type(section: str, key: str,
                               valtype: Literal['s', 'i', 'b'] = 's') -> Any:
+    """
+    Retrieves the value of the specified option from the INI file.
+
+    Args:
+        section (str): The section in the INI file to search for the option.
+        key (str): The key of the option to retrieve.
+        valtype (Literal['s', 'i', 'b'], optional): The type of the value to
+                                                    retrieve. Defaults to 's'.
+
+    Returns:
+        Any: Value of specified option, or None if the section does not exist.
+
+    Raises:
+        None
+
+    """
     if section not in ini.sections():
         return None
     if valtype in 'Ss':
@@ -94,7 +117,7 @@ def _parse_languages(languages: dict):
     the update values to the config, return a string to write in the
     corresponding inputtext widget
     :param languages:
-    :return: ex. 'ita,eng,fre' if user selects english, italian and french
+    :return: e. 'ita,eng,fre' if user selects English, Italian and French
     """
     sel_by_user = {k: v for k, v in languages.items() if v is True}
     values_sel_by_user = [v.split('#')[1].strip() for v in sel_by_user]
@@ -174,15 +197,26 @@ layout = [
     [
         [sg.HSeparator()],  # row 3
         [
-            sg.Listbox(
-                values=[],
-                size=(85, 6),
-                key="-OUTLIST-",
-                horizontal_scroll=True,
-            ),
+            sg.Table(
+                values=[['']],
+                headings=['TITLE'],
+                auto_size_columns=True,
+                justification="left",
+                key='-RESULTSTABLE-',
+                row_height=35,
+                num_rows=10,
+                expand_x=True,
+                expand_y=True,
+                enable_click_events=True,
+                vertical_scroll_only=False,
+                alternating_row_color='lightyellow',
+            )
         ],
         [sg.Text("Enter text to search, then click the 'SEARCH' button",
-                 size=(80, 1), key='-LISTTITLE-')],
+                 size=(80, 1), key='-LISTTITLE-'),
+         ],
+        [sg.Text("Additional content", key="-MEDIAFILENAME-", visible=True,
+                 size=(80, 1), )],
         [sg.HSeparator()],
     ],
     # row 5 - Options
@@ -248,7 +282,7 @@ def mainloop(layout: list) -> None:
     3) USER: single click on the desired show, then click on -SELSHOW-
     4) APP: retrieve and populate -OUTLIST- with the subtitle file name
        associated with the selected show, enable the -GETSUBT- button
-    5) USER: single click on the subtitle file he needs, theN click on -GETSUBT-
+    5) USER: single click on the subtitle file he needs, then click on -GETSUBT-
     6) APP: download the selected subtitle file and saves locally to the path
        specified in the textbox -OUTFOLDER-, prompting the user.
 
@@ -266,10 +300,8 @@ def mainloop(layout: list) -> None:
     window['-SEARCHTERMS-'].bind("<Return>", "_srcenter")
     while True:
         event, values = window.read()
-        # print("EVENT")
-        # print(event)
-        # print("VALUES")
-        # print(values)
+        logger.debug(event)
+        logger.debug(values)
         if event in (sg.WIN_CLOSED, '-CANCEL-'):
             break
         # Search opensubtitles.org by the user provided string
@@ -279,56 +311,55 @@ def mainloop(layout: list) -> None:
         elif event in ['-SELMEDIAFILE-']:
             on_btn_string_src_from_media_file(window, event, values)
         # Search tips popup window
-        elif event in '-SRCTERMSINFO-':
+        elif event in ['-SRCTERMSINFO-']:
             on_btn_search_tips(INFO_TIMEOUT)
         # Retrieve subtitles files for the selected show
-        elif event in '-SELSHOW-':
+        elif event in ['-SELSHOW-']:
             selected_show = on_btn_select_show(window, event, values, shows)
         # Download the subtitle file (compressed) chosen by the user
-        elif event in '-GETSUBT-':
+        elif event in ['-GETSUBT-']:
             on_btn_get_subtitles(window, event, values, selected_show)
         # GUI for configuration
-        elif event in '-CONFIG-':
+        elif event in ['-CONFIG-']:
             config_settings_loop()
         # GUI for subtitle languages selection
-        elif event in '-LANGCONF-':
+        elif event in ['-LANGCONF-']:
             sel_lang = values['-LANGSELECTED-'].split(',')
             config_languages_settings_loop(LANGUAGES, sel_lang, ITEMS_BY_ROW)
             window['-LANGSELECTED-'].update(_get_sel_languages())
         # Syncronize the 'extract srt file' and 'delete zip file' options
-        elif event in '-CHKEXTRACTSRT-':
+        elif event in ['-CHKEXTRACTSRT-']:
             if not values[event]:
-                # If 'extract srl file' is disable no matter what the
+                # If 'extract srl file' is disabled the
                 # downloaded .zip file will not be deleted
                 window['-CHKDELETEZIP-'].update(False)
                 window['-CHKDELETEZIP-'].update(disabled=True)
             else:
                 window['-CHKDELETEZIP-'].update(disabled=False)
-
+        elif '+CLICKED+' in event:
+            # window['MEDIAFILENAME'].update()
+            widget, event_name, row_col = event
+            print("clicked EVENT")
+            t = window['-RESULTSTABLE-'].get()[row_col[0]][row_col[1]]
+            print("Selected " + t)
+            window['-MEDIAFILENAME-'].update(value=t)
     window.close()
 
 
-def _enumerate_items(items: list, start: int = 1, idx_sep: str = ' - ') -> list:
+def _enumerate_items(items: list) -> List[list]:
     """
-    Prepend a numeric progressive index (starting by `start`) in every
-    item in `items`, the number is separed by the original content of each item
-    by `idx-sep`
     :param items: collection to parse **must be a one level list**
-    :param start: the starting number
-    :param idx_sep: string separating the number and the item content
     :return:
     """
     items_numbered = []
-    for i, item in enumerate(items):
-        if not isinstance(item, str):
-            continue
-        items_numbered.append(f"{i + 1}{idx_sep}{item}")
+    for item in items:
+        items_numbered.append([item])
     return items_numbered
 
 
 def on_btn_search(window, event, values) -> list:
+    """User press 'Search' button"""
     try:
-        print("Search button pressed!")
         window['-GETSUBT-'].update(disabled=True)
         window['-SELSHOW-'].update(disabled=True)
         lng = values['-LANGSELECTED-']
@@ -338,7 +369,8 @@ def on_btn_search(window, event, values) -> list:
                                      'select one in order to download the '
                                      'subtitle file')
         numbered_shows = _enumerate_items([str(show) for show in shows])
-        window['-OUTLIST-'].update(values=numbered_shows)
+        window['-RESULTSTABLE-'].update(values=numbered_shows)
+        # window['-OUTLIST-'].update(values=numbered_shows)
         window['-SELSHOW-'].update(disabled=False)
         return shows
     except Exception as ex:
@@ -349,7 +381,8 @@ def on_btn_search(window, event, values) -> list:
 def on_btn_string_src_from_media_file(window, event, values) -> None:
     folderpath, filename = os.path.split(values['-SELMEDIAFILE-'])
     name, _ = os.path.splitext(filename)  # Paste file name without extensions
-    window['-SEARCHTERMS-'].update(value=name,  select=True)
+    window['-MEDIAFILENAME-'].update(value=f'Media file to match: {filename}')
+    window['-SEARCHTERMS-'].update(value=name, select=True)
     window['-DLFOLDER-'].update(value=folderpath)
 
 
@@ -368,27 +401,27 @@ def on_btn_select_show(window, event, values, shows) -> ost.SubtitledShow:
     associated with
     """
     try:
-        print(values['-OUTLIST-'])
-        if not values['-OUTLIST-']:
-            sg.popup(
-                'Please select the show in order to download the subtitles')
+        # if not values['-OUTLIST-']:
+        if not values['-RESULTSTABLE-']:
+            sg.popup('Please select a show in order to download the subtitles')
         else:
             # Parse the index of the selected show related to the list "shows"
-            idx = _get_idx_from_selected(values['-OUTLIST-'][0])
+            # idx = _get_idx_from_selected(values['-OUTLIST-'][0])
+            idx = values['-RESULTSTABLE-'][0]
             selected_show = shows[idx]
-
             # For the selected show retrieve the subtitle files
             show_url = selected_show.get_url(ini.get('parser', 'OST_DOMAIN'))
             srtfiles = ost.get_subtitles_for_show(show_url)
             # Pass sutitles files to the selected show object
             selected_show.srt_files = srtfiles
-            numbered_srtfiles = _enumerate_items([srt.name for srt in srtfiles])
-            window['-LISTTITLE-'].update('Subtitle files found for the show, '
-                                         'please pick one to download')
-            window['-OUTLIST-'].update(values=numbered_srtfiles)
+            srtfiles_rows = [[srt.name] for srt in srtfiles]
+            window['-LISTTITLE-'].update(
+                f'{len(srtfiles_rows)} subtitles files found for the show, '
+                'pick one to download')
+            window['-RESULTSTABLE-'].update(values=srtfiles_rows)
             window['-GETSUBT-'].update(disabled=False)
             # Return the selected show, we need this for the subsequential
-            # retrieving of the subtitle file
+            # retrieving of the subtitles file
             return selected_show
     except Exception as ex:
         prompt = f"An error occurred:{ex} "
@@ -400,7 +433,7 @@ def _get_remote_and_local_subtitles_filenames(
         srtfile_idx) -> Tuple[str, str]:
     """Get the remote file url to download and the local filename to save"""
     srturl = selected_show.srt_files[srtfile_idx].href
-    # Sometimes the domain is in the resourse path, a check is needed
+    # Sometimes the domain is in the resource path, a check is needed
     if not srturl.startswith('http'):
         srturl = selected_show.srt_files[srtfile_idx].get_url(
             ini.get('parser', 'OST_DOMAIN'))
@@ -414,17 +447,17 @@ def on_btn_get_subtitles(window, event, values,
     """Download the subtitle file chosen"""
     try:
         window['-SELSHOW-'].update(disabled=True)
-        print(selected_show)
-        if not values['-OUTLIST-']:
+        # print(selected_show)
+        if not values['-RESULTSTABLE-']:
             sg.popup('Please select a subtitles file to download')
         else:
-            idx = _get_idx_from_selected(values['-OUTLIST-'][0])
+            idx = values['-RESULTSTABLE-'][0]
             srturl, filename = _get_remote_and_local_subtitles_filenames(
                 values['-DLFOLDER-'], selected_show, idx)
-            print("Downloading " + srturl)
+            logger.debug(f"Downloading {srturl}")
             filesize = ost.download_srt_files(url=srturl,
                                               local_filename=filename)
-            print(f"File {filename} ({filesize} bytes) created")
+            logger.debug(f"File {filename} ({filesize} bytes) created")
             if filesize < 0:
                 sg.popup_error("Srt file download",
                                "Un error has occurred, unable to download the "
@@ -503,8 +536,6 @@ def on_btn_search_tips(timeout):
         f'This window will close in {timeout} seconds'
     ]
     sg.popup_quick_message('\n'.join(prompt), auto_close_duration=10)
-
-
 
 
 if __name__ == '__main__':
