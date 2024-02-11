@@ -7,6 +7,9 @@ looknfeel = SandyBeach
 extract_srt = true
 delete_zip = True
 selected_languages = eng
+ost_filename_as_referring_media = true
+open_ost_folder_after_download = false
+
 
 [paths]
 ost_dl_folder = /somefolder

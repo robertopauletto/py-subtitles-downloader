@@ -19,7 +19,6 @@ from localfilemanagement import extract_srt
 logger = logging.getLogger(__name__)
 configure_logging()
 
-
 # Add parent folder as source root to python path
 # careful, not exensively tested
 script_folder = Path(os.path.abspath(__name__)).parent.absolute()
@@ -28,7 +27,6 @@ if len(script_folder.parts) == 1:
     sys.path.append(os.path.join(script_folder.parts[0]))
 else:
     sys.path.append(os.path.join(*script_folder.parts[0:-1]))
-
 
 import backend.ostdownloader as ost
 
@@ -170,13 +168,14 @@ layout = [
             enable_events=True
         ),
         sg.Button(
-            '',
+
             tooltip='Click for tips about searching',
             image_data=gutils.convert_to_base64(INFO_BTN_FILENAME),
             button_color=(sg.theme_background_color(),
                           sg.theme_background_color()),
             border_width=0, key='-SRCTERMSINFO-'
         ),
+        # sg.Button.bind(bind_string="Search", key_modifier="<Alt_L>s")
 
     ],
     # row 2 - download folder
@@ -258,14 +257,24 @@ layout = [
                 'gui', 'ost_filename_as_referring_media', 'b'),
             tooltip="",
             key='-CHKOSTASMEDIA-'
+        )],
+        [sg.Checkbox(
+            "Show prompt for opening subtitle file folder after download",
+            default=_get_ini_option_with_type(
+                'gui', 'open_ost_folder_after_download', 'b'),
+            tooltip="If checked open the subtitle file folder after download",
+            key='-CHKOPENOSTFOLDER-'
         )]
 
     ],
     # row 5 - Commands
     [
-        sg.OK("Search", key="-SEARCH-"),
-        sg.Button("Get Show", key="-SELSHOW-", disabled=True),
-        sg.Button("Get Subtitles", key="-GETSUBT-", disabled=True),
+        sg.OK("Search", key="-SEARCH-",
+              tooltip='Search for show (Alt-S)', ),
+        sg.Button("Get Show", key="-SELSHOW-",
+                  tooltip='Select Show (Alt-G)', disabled=True),
+        sg.Button("Get Subtitles", key="-GETSUBT-",
+                  tooltip='Download subtitles (Alt-D)', disabled=True),
         sg.Button("Configure", key="-CONFIG-"),
         sg.Cancel("Quit", key="-CANCEL-")
     ]  # last row
@@ -297,13 +306,29 @@ def mainloop(layout: list) -> None:
         finalize=True,
         icon=gutils.convert_to_base64(APPLOGO_FILENAME)
     )
+
+    # Buttons keybindings
+    window.bind('<Alt-s>', '-MEDIAFILESH-')
+    window.bind('<Alt-g>', "-SELSHOWSH-")
+    window.bind('<Alt-d>', "-GETSUBTSH-")
+    window.bind('<Alt-f>', "-SELMEDIAFILESH-")
     window['-SEARCHTERMS-'].bind("<Return>", "_srcenter")
+
     while True:
         event, values = window.read()
         logger.debug(event)
         logger.debug(values)
         if event in (sg.WIN_CLOSED, '-CANCEL-'):
             break
+        # key binding event managers
+        elif event == '-SELMEDIAFILESH-':
+            window["-MEDIAFILE-"].click()
+        elif event == '-MEDIAFILESH-':
+            window['-SEARCH-'].click()
+        elif event == '-SELSHOWSH-':
+            window['-SELSHOW-'].click()
+        elif event == '-GETSUBTSH-':
+            window['-GETSUBT-'].click()
         # Search opensubtitles.org by the user provided string
         elif event in ['-SEARCH-', '_srcenter']:
             shows = on_btn_search(window, event, values)
@@ -471,8 +496,12 @@ def on_btn_get_subtitles(window, event, values,
                         filename, values['-DLFOLDER-'], rename_as=rename_as)
                     if filesize:
                         os.remove(filename)
-                _open_folder_upon_choice(filename, filesize,
-                                         values['-DLFOLDER-'])
+                        filename = rename_as
+                # prompt the user about opening the folder in whiche the
+                # subtitle file has been downloaded
+                if values['-CHKOPENOSTFOLDER-']:
+                    _open_folder_upon_choice(filename, filesize,
+                                             values['-DLFOLDER-'])
     except Exception as ex:
         prompt = f"An error occurred:{ex} "
         sg.popup_error(prompt, title="")
